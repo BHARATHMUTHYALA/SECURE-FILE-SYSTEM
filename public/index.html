@@ -1,0 +1,4346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SecureFS - Enterprise File Management</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js" crossorigin="anonymous"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0a0f1a;
+      --bg-secondary: #111827;
+      --bg-tertiary: #1f2937;
+      --bg-hover: #374151;
+      --accent: #2563eb;
+      --accent-hover: #1d4ed8;
+      --accent-light: #3b82f6;
+      --accent-subtle: rgba(37, 99, 235, 0.1);
+      --success: #059669;
+      --success-light: #10b981;
+      --warning: #d97706;
+      --warning-light: #f59e0b;
+      --danger: #dc2626;
+      --danger-light: #ef4444;
+      --text: #f9fafb;
+      --text-secondary: #e5e7eb;
+      --text-muted: #9ca3af;
+      --text-dim: #6b7280;
+      --border: #374151;
+      --border-light: #4b5563;
+      --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.4), 0 2px 4px -1px rgba(0, 0, 0, 0.3);
+      --shadow-lg: 0 10px 25px -3px rgba(0, 0, 0, 0.5), 0 4px 10px -2px rgba(0, 0, 0, 0.4);
+      --radius: 10px;
+      --radius-sm: 6px;
+      --radius-lg: 14px;
+    }
+    
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      line-height: 1.6;
+      font-size: 14px;
+      -webkit-font-smoothing: antialiased;
+    }
+    
+    /* Layout */
+    .app-container { display: flex; min-height: 100vh; }
+    
+    .sidebar {
+      width: 260px;
+      background: var(--bg-secondary);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      position: fixed;
+      height: 100vh;
+      z-index: 100;
+      transition: transform 0.3s ease;
+    }
+    
+    .sidebar-header {
+      padding: 20px;
+      border-bottom: 1px solid var(--border);
+    }
+    
+    .sidebar-header h1 {
+      font-size: 1.25rem;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    
+    .sidebar-nav { flex: 1; padding: 15px 10px; overflow-y: auto; }
+    
+    .nav-section { margin-bottom: 20px; }
+    .nav-section-title { font-size: 11px; text-transform: uppercase; color: var(--text-muted); padding: 10px; letter-spacing: 0.5px; }
+    
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 15px;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      color: var(--text-muted);
+      transition: all 0.2s;
+      font-size: 14px;
+    }
+    
+    .nav-item:hover { background: var(--bg-tertiary); color: var(--text); }
+    .nav-item.active { background: var(--accent); color: white; }
+    .nav-item .badge { margin-left: auto; background: var(--danger); padding: 2px 8px; border-radius: 10px; font-size: 11px; }
+    
+    .sidebar-footer {
+      padding: 15px;
+      border-top: 1px solid var(--border);
+    }
+    
+    .user-card {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px;
+      background: var(--bg-tertiary);
+      border-radius: var(--radius-sm);
+    }
+    
+    .user-avatar {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      background: var(--accent);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 600;
+    }
+    
+    .user-info { flex: 1; min-width: 0; }
+    .user-info .name { font-size: 14px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .user-info .role { font-size: 12px; color: var(--text-muted); text-transform: capitalize; }
+    
+    .main-content {
+      flex: 1;
+      margin-left: 260px;
+      padding: 25px;
+      min-height: 100vh;
+    }
+    
+    /* Header */
+    .page-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 25px;
+      flex-wrap: wrap;
+      gap: 15px;
+    }
+    
+    .page-title { font-size: 1.75rem; font-weight: 600; }
+    .page-subtitle { font-size: 0.9rem; color: var(--text-muted); }
+    
+    .header-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+    
+    /* Buttons */
+    .btn {
+      padding: 10px 18px;
+      border: none;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.2s;
+    }
+    
+    .btn-primary { background: var(--accent); color: white; }
+    .btn-primary:hover { background: var(--accent-hover); }
+    .btn-success { background: var(--success); color: white; }
+    .btn-danger { background: var(--danger); color: white; }
+    .btn-warning { background: var(--warning); color: #000; }
+    .btn-ghost { background: transparent; color: var(--text-muted); border: 1px solid var(--border); }
+    .btn-ghost:hover { background: var(--bg-tertiary); color: var(--text); }
+    .btn-sm { padding: 6px 12px; font-size: 13px; }
+    .btn-icon { padding: 8px; min-width: 36px; justify-content: center; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    
+    /* Tabs */
+    .tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); }
+    .tab { background: none; border: none; padding: 10px 20px; color: var(--text-muted); cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; font-size: 14px; }
+    .tab:hover { color: var(--text); background: var(--bg-tertiary); }
+    .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+    
+    /* Cards */
+    .card {
+      background: var(--bg-secondary);
+      border-radius: var(--radius);
+      padding: 20px;
+      margin-bottom: 20px;
+      border: 1px solid var(--border);
+    }
+    
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 15px;
+    }
+    
+    .card-title { font-size: 1rem; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+    
+    /* Stats Grid */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 15px;
+      margin-bottom: 25px;
+    }
+    
+    .stat-card {
+      background: var(--bg-secondary);
+      border-radius: var(--radius);
+      padding: 20px;
+      border: 1px solid var(--border);
+    }
+    
+    .stat-card .icon {
+      width: 48px;
+      height: 48px;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 24px;
+      margin-bottom: 12px;
+    }
+    
+    .stat-card .value { font-size: 2rem; font-weight: 700; }
+    .stat-card .label { color: var(--text-muted); font-size: 0.85rem; }
+    .stat-card.blue .icon { background: rgba(59, 130, 246, 0.2); }
+    .stat-card.green .icon { background: rgba(34, 197, 94, 0.2); }
+    .stat-card.yellow .icon { background: rgba(245, 158, 11, 0.2); }
+    /* .stat-card.red .icon { background: rgba(239, 68, 68, 0.2); } */
+    
+    /* Progress Bar */
+    .progress-bar {
+      height: 8px;
+      background: var(--bg-tertiary);
+      border-radius: 4px;
+      overflow: hidden;
+      margin-top: 8px;
+    }
+    
+    .progress-bar .fill {
+      height: 100%;
+      background: var(--accent);
+      transition: width 0.3s ease;
+    }
+    
+    .progress-bar .fill.warning { background: var(--warning); }
+    .progress-bar .fill.danger { background: var(--danger); }
+    
+    /* File Grid/List */
+    .file-controls {
+      display: flex;
+      gap: 15px;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+    }
+    
+    .search-box {
+      flex: 1;
+      min-width: 200px;
+      position: relative;
+    }
+    
+    .search-box input {
+      width: 100%;
+      padding: 12px 15px 12px 42px;
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      color: var(--text);
+      font-size: 14px;
+    }
+    
+    .search-box input:focus { outline: none; border-color: var(--accent); }
+    .search-box i { position: absolute; left: 15px; top: 50%; transform: translateY(-50%); color: var(--text-muted); }
+    
+    .view-toggle { display: flex; gap: 5px; }
+    
+    .file-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 15px;
+    }
+    
+    .file-list { display: flex; flex-direction: column; gap: 8px; }
+    
+    .file-card {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 15px;
+      cursor: pointer;
+      transition: all 0.2s;
+      position: relative;
+    }
+    
+    .file-card:hover { border-color: var(--accent); transform: translateY(-2px); }
+    .file-card.selected { border-color: var(--accent); background: rgba(59, 130, 246, 0.1); }
+    
+    .file-card .file-icon {
+      width: 56px;
+      height: 64px;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 28px;
+      margin-bottom: 12px;
+      position: relative;
+      background: linear-gradient(135deg, var(--bg-tertiary) 0%, var(--bg) 100%);
+      border: 1px solid var(--border);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    
+    .file-icon.icon-image { background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; }
+    .file-icon.icon-pdf { background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); color: white; }
+    .file-icon.icon-word { background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); color: white; }
+    .file-icon.icon-excel { background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%); color: white; }
+    .file-icon.icon-ppt { background: linear-gradient(135deg, #f97316 0%, #ea580c 100%); color: white; }
+    .file-icon.icon-text { background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%); color: white; }
+    .file-icon.icon-zip { background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: white; }
+    .file-icon.icon-video { background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%); color: white; }
+    .file-icon.icon-audio { background: linear-gradient(135deg, #ec4899 0%, #db2777 100%); color: white; }
+    .file-icon.icon-code { background: linear-gradient(135deg, #14b8a6 0%, #0d9488 100%); color: white; }
+    .file-icon.icon-default { background: linear-gradient(135deg, #64748b 0%, #475569 100%); color: white; }
+    
+    .file-icon .file-ext {
+      position: absolute;
+      bottom: 4px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 9px;
+      font-weight: 700;
+      text-transform: uppercase;
+      background: rgba(0,0,0,0.3);
+      padding: 1px 4px;
+      border-radius: 2px;
+      letter-spacing: 0.5px;
+    }
+    
+    .file-card .file-name {
+      font-weight: 500;
+      margin-bottom: 4px;
+      word-break: break-all;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    
+    .file-card .file-meta { font-size: 12px; color: var(--text-muted); display: flex; gap: 10px; flex-wrap: wrap; }
+    
+    .file-card .file-badges { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
+    
+    .file-badge {
+      font-size: 11px;
+      padding: 3px 8px;
+      border-radius: 4px;
+      background: var(--bg-tertiary);
+    }
+    
+    .file-badge.encrypted { background: rgba(34, 197, 94, 0.2); color: var(--success); }
+    .file-badge.shared { background: rgba(59, 130, 246, 0.2); color: var(--accent); }
+    .file-badge.favorite { background: rgba(245, 158, 11, 0.2); color: var(--warning); }
+    
+    .file-card .favorite-btn {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      background: rgba(0, 0, 0, 0.4);
+      border: none;
+      border-radius: 50%;
+      cursor: pointer;
+      font-size: 22px;
+      width: 36px;
+      height: 36px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      opacity: 0.8;
+      transition: all 0.2s;
+    }
+    
+    .file-card .favorite-btn:hover { opacity: 1; background: rgba(0, 0, 0, 0.6); transform: scale(1.1); }
+    .file-card .favorite-btn.active { opacity: 1; background: rgba(245, 158, 11, 0.3); }
+    
+    .file-card .checkbox {
+      position: absolute;
+      top: 8px;
+      left: 8px;
+      width: 28px;
+      height: 28px;
+      border: 2px solid var(--border);
+      border-radius: 6px;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      background: var(--bg);
+      font-size: 16px;
+      font-weight: bold;
+    }
+    
+    .file-card:hover .checkbox, .file-card.selected .checkbox { display: flex; }
+    .file-card.selected .checkbox { background: var(--accent); border-color: var(--accent); color: white; }
+    
+    /* File List View */
+    .file-row {
+      display: flex;
+      align-items: center;
+      gap: 15px;
+      padding: 15px;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    
+    .file-row:hover { border-color: var(--accent); }
+    .file-row .file-icon { font-size: 24px; }
+    .file-row .file-info { flex: 1; min-width: 0; }
+    .file-row .file-name { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .file-row .file-meta { font-size: 12px; color: var(--text-muted); }
+    .file-row .file-actions { display: flex; gap: 8px; }
+    
+    /* Folder path */
+    .folder-path {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 15px;
+      background: var(--bg-secondary);
+      border-radius: var(--radius-sm);
+      margin-bottom: 15px;
+      overflow-x: auto;
+    }
+    
+    .folder-path .path-item {
+      color: var(--text-muted);
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    
+    .folder-path .path-item:hover { color: var(--text); }
+    .folder-path .path-item.current { color: var(--text); font-weight: 500; }
+    .folder-path .separator { color: var(--border); }
+    
+    /* Forms */
+    .form-group { margin-bottom: 15px; }
+    .form-group label { display: block; margin-bottom: 6px; font-size: 14px; color: var(--text-muted); }
+    
+    .form-input {
+      width: 100%;
+      padding: 12px 15px;
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      color: var(--text);
+      font-size: 14px;
+    }
+    
+    .form-input:focus { outline: none; border-color: var(--accent); }
+    
+    .form-input-file {
+      border: 2px dashed var(--border);
+      background: var(--bg);
+      padding: 30px;
+      text-align: center;
+      cursor: pointer;
+    }
+    
+    .form-input-file:hover { border-color: var(--accent); }
+    .form-input-file.dragover { border-color: var(--accent); background: rgba(59, 130, 246, 0.1); }
+    
+    .form-checkbox {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      cursor: pointer;
+    }
+    
+    .form-checkbox input { width: 18px; height: 18px; accent-color: var(--accent); }
+    
+    /* Modals */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.7);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      opacity: 0;
+      visibility: hidden;
+      transition: all 0.3s;
+    }
+    
+    .modal-overlay.active { opacity: 1; visibility: visible; }
+    
+    .modal {
+      background: var(--bg-secondary);
+      border-radius: var(--radius);
+      width: 90%;
+      max-width: 600px;
+      max-height: 90vh;
+      overflow: auto;
+      transform: scale(0.9);
+      transition: transform 0.3s;
+    }
+    
+    .modal-overlay.active .modal { transform: scale(1); }
+    
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 20px;
+      border-bottom: 1px solid var(--border);
+    }
+    
+    .modal-header h2 { font-size: 1.25rem; }
+    .modal-close { background: none; border: none; color: var(--text-muted); font-size: 24px; cursor: pointer; }
+    .modal-close:hover { color: var(--text); }
+    .modal-body { padding: 20px; }
+    .modal-footer { padding: 15px 20px; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; gap: 10px; }
+    
+    /* Preview */
+    .preview-image { max-width: 100%; max-height: 60vh; border-radius: var(--radius-sm); }
+    .preview-text { background: var(--bg); padding: 20px; border-radius: var(--radius-sm); font-family: monospace; font-size: 13px; max-height: 400px; overflow: auto; white-space: pre-wrap; }
+    .preview-pdf { width: 100%; height: 60vh; border: none; border-radius: var(--radius-sm); }
+    
+    /* Enhanced PDF Viewer */
+    .pdf-viewer-container {
+      display: flex;
+      flex-direction: column;
+      height: 70vh;
+      background: var(--bg);
+      border-radius: var(--radius-sm);
+      overflow: hidden;
+    }
+    
+    .pdf-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 15px;
+      background: var(--bg-tertiary);
+      border-bottom: 1px solid var(--border);
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    
+    .pdf-toolbar-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    
+    .pdf-toolbar button {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 6px 12px;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      font-size: 14px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      transition: all 0.2s;
+    }
+    
+    .pdf-toolbar button:hover:not(:disabled) {
+      background: var(--accent);
+      border-color: var(--accent);
+    }
+    
+    .pdf-toolbar button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    
+    .pdf-page-info {
+      color: var(--text-muted);
+      font-size: 14px;
+      min-width: 100px;
+      text-align: center;
+    }
+    
+    .pdf-page-input {
+      width: 50px;
+      padding: 4px 8px;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      color: var(--text);
+      text-align: center;
+      font-size: 14px;
+    }
+    
+    .pdf-zoom-select {
+      padding: 6px 10px;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      color: var(--text);
+      font-size: 14px;
+      cursor: pointer;
+    }
+    
+    .pdf-canvas-container {
+      flex: 1;
+      overflow: auto;
+      display: flex;
+      justify-content: center;
+      padding: 20px;
+      background: var(--bg-secondary);
+    }
+    
+    .pdf-canvas-wrapper {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+    }
+    
+    .pdf-canvas {
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+      background: white;
+    }
+    
+    .pdf-loading {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      color: var(--text-muted);
+      gap: 15px;
+    }
+    
+    .pdf-loading-spinner {
+      width: 40px;
+      height: 40px;
+      border: 3px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+    
+    .pdf-error {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      color: var(--danger);
+      gap: 10px;
+      text-align: center;
+      padding: 20px;
+    }
+    
+    .pdf-thumbnails {
+      width: 120px;
+      background: var(--bg-tertiary);
+      border-right: 1px solid var(--border);
+      overflow-y: auto;
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    
+    .pdf-thumbnail {
+      cursor: pointer;
+      border: 2px solid transparent;
+      border-radius: var(--radius-sm);
+      overflow: hidden;
+      transition: border-color 0.2s;
+    }
+    
+    .pdf-thumbnail:hover {
+      border-color: var(--accent);
+    }
+    
+    .pdf-thumbnail.active {
+      border-color: var(--accent);
+    }
+    
+    .pdf-thumbnail canvas {
+      width: 100%;
+      height: auto;
+      display: block;
+    }
+    
+    .pdf-thumbnail-label {
+      text-align: center;
+      font-size: 11px;
+      color: var(--text-muted);
+      padding: 4px;
+      background: var(--bg-secondary);
+    }
+    
+    .pdf-main-area {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+    
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    
+    /* Activity */
+    .activity-list { display: flex; flex-direction: column; gap: 10px; }
+    
+    .activity-item {
+      display: flex;
+      gap: 12px;
+      padding: 12px;
+      background: var(--bg);
+      border-radius: var(--radius-sm);
+    }
+    
+    .activity-icon {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: var(--bg-tertiary);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    
+    .activity-content { flex: 1; }
+    .activity-content .text { font-size: 14px; }
+    .activity-content .time { font-size: 12px; color: var(--text-muted); }
+    
+    /* Notifications */
+    .notifications-dropdown {
+      position: absolute;
+      top: 100%;
+      right: 0;
+      width: 350px;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      z-index: 100;
+      display: none;
+    }
+    
+    .notifications-dropdown.active { display: block; }
+    
+    .notification-item {
+      padding: 15px;
+      border-bottom: 1px solid var(--border);
+      cursor: pointer;
+    }
+    
+    .notification-item:hover { background: var(--bg-tertiary); }
+    .notification-item.unread { background: rgba(59, 130, 246, 0.1); }
+    .notification-item .title { font-weight: 500; margin-bottom: 4px; }
+    .notification-item .message { font-size: 13px; color: var(--text-muted); }
+    .notification-item .time { font-size: 11px; color: var(--text-muted); margin-top: 6px; }
+    
+    /* Tables */
+    .table-container { overflow-x: auto; }
+    
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    
+    th, td {
+      padding: 12px 15px;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+    }
+    
+    th { font-weight: 600; color: var(--text-muted); font-size: 13px; text-transform: uppercase; }
+    
+    tr:hover td { background: var(--bg); }
+    
+    /* Tags */
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-size: 12px;
+      background: var(--bg-tertiary);
+    }
+    
+    .tag .remove {
+      cursor: pointer;
+      opacity: 0.5;
+    }
+    
+    .tag .remove:hover { opacity: 1; }
+    
+    /* Role badges */
+    .role-badge {
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+    
+    .role-badge.admin { background: var(--danger); }
+    .role-badge.editor { background: var(--warning); color: #000; }
+    .role-badge.viewer { background: var(--success); color: #000; }
+    
+    /* Toast */
+    .toast-container {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      z-index: 2000;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    
+    .toast {
+      padding: 15px 20px;
+      border-radius: var(--radius-sm);
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      animation: slideIn 0.3s ease;
+    }
+    
+    .toast.success { border-left: 4px solid var(--success); }
+    .toast.error { border-left: 4px solid var(--danger); }
+    .toast.warning { border-left: 4px solid var(--warning); }
+    
+    @keyframes slideIn {
+      from { transform: translateX(100%); opacity: 0; }
+      to { transform: translateX(0); opacity: 1; }
+    }
+    
+    /* Empty state */
+    .empty-state {
+      text-align: center;
+      padding: 60px 20px;
+      color: var(--text-muted);
+    }
+    
+    .empty-state .icon { font-size: 64px; margin-bottom: 20px; opacity: 0.5; }
+    .empty-state h3 { font-size: 1.25rem; margin-bottom: 10px; color: var(--text); }
+    
+    /* Pagination */
+    .pagination {
+      display: flex;
+      justify-content: center;
+      gap: 8px;
+      margin-top: 25px;
+    }
+    
+    .pagination button {
+      padding: 8px 14px;
+      border: 1px solid var(--border);
+      background: var(--bg-secondary);
+      color: var(--text);
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+    }
+    
+    .pagination button:hover { border-color: var(--accent); }
+    .pagination button.active { background: var(--accent); border-color: var(--accent); }
+    .pagination button:disabled { opacity: 0.5; cursor: not-allowed; }
+    
+    /* Auth page */
+    .auth-container {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    
+    .auth-card {
+      width: 100%;
+      max-width: 420px;
+      background: var(--bg-secondary);
+      border-radius: var(--radius);
+      padding: 40px;
+      border: 1px solid var(--border);
+    }
+    
+    .auth-card .logo {
+      text-align: center;
+      margin-bottom: 30px;
+    }
+    
+    .auth-card .logo h1 { font-size: 1.5rem; }
+    .auth-card .logo p { color: var(--text-muted); font-size: 14px; margin-top: 5px; }
+    
+    .auth-toggle {
+      text-align: center;
+      margin-top: 20px;
+      color: var(--text-muted);
+    }
+    
+    .auth-toggle a { color: var(--accent); text-decoration: none; }
+    .auth-toggle a:hover { text-decoration: underline; }
+    
+    /* Responsive */
+    @media (max-width: 768px) {
+      .sidebar {
+        transform: translateX(-100%);
+      }
+      
+      .sidebar.open { transform: translateX(0); }
+      
+      .main-content { margin-left: 0; }
+      
+      .menu-toggle {
+        display: block;
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        z-index: 99;
+        width: 56px;
+        height: 56px;
+        border-radius: 50%;
+        background: var(--accent);
+        border: none;
+        color: white;
+        font-size: 24px;
+        cursor: pointer;
+        box-shadow: var(--shadow);
+      }
+      
+      .stats-grid { grid-template-columns: repeat(2, 1fr); }
+      .file-grid { grid-template-columns: 1fr; }
+    }
+    
+    .menu-toggle { display: none; }
+    
+    /* Utilities */
+    .hidden { display: none !important; }
+    .text-center { text-align: center; }
+    .text-right { text-align: right; }
+    .text-muted { color: var(--text-muted); }
+    .text-success { color: var(--success); }
+    .text-danger { color: var(--danger); }
+    .text-warning { color: var(--warning); }
+    .mt-2 { margin-top: 10px; }
+    .mt-4 { margin-top: 20px; }
+    .mb-2 { margin-bottom: 10px; }
+    .mb-4 { margin-bottom: 20px; }
+    .flex { display: flex; }
+    .gap-2 { gap: 10px; }
+    .gap-4 { gap: 20px; }
+    .items-center { align-items: center; }
+    .justify-between { justify-content: space-between; }
+    .flex-1 { flex: 1; }
+    .grid-2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; }
+    
+    /* File Upload Area */
+    .file-upload-area {
+      border: 2px dashed var(--border);
+      border-radius: var(--radius-sm);
+      background: var(--bg);
+      cursor: pointer;
+      transition: all 0.3s;
+      position: relative;
+    }
+    
+    .file-upload-area:hover {
+      border-color: var(--accent);
+      background: rgba(59, 130, 246, 0.05);
+    }
+    
+    .file-upload-area.dragover {
+      border-color: var(--accent);
+      background: rgba(59, 130, 246, 0.1);
+    }
+    
+    /* Form Label */
+    .form-label {
+      display: block;
+      margin-bottom: 8px;
+      font-size: 14px;
+      color: var(--text);
+      font-weight: 500;
+    }
+    
+    .form-label .text-danger {
+      color: var(--danger);
+      margin-left: 4px;
+    }
+    
+    /* Grid Columns */
+    .grid-cols-1 {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 16px;
+    }
+    
+    .grid { display: grid; }
+    .gap-4 { gap: 16px; }
+  </style>
+</head>
+<body>
+  <!-- Auth Section -->
+  <div id="auth-section" class="auth-container">
+    <div class="auth-card">
+      <div class="logo">
+        <div class="logo-icon"><i class="fas fa-shield-halved"></i></div>
+        <h1>SecureFS</h1>
+        <p>Enterprise-grade file management</p>
+      </div>
+      <div id="auth-alert"></div>
+      <form id="auth-form">
+        <div class="form-group hidden" id="username-group">
+          <label><i class="fas fa-user"></i> Username</label>
+          <input type="text" id="auth-username" class="form-input" placeholder="3-30 characters">
+        </div>
+        <div class="form-group">
+          <label><i class="fas fa-envelope"></i> Email</label>
+          <input type="email" id="auth-email" class="form-input" required placeholder="Enter your email">
+        </div>
+        <div class="form-group">
+          <label><i class="fas fa-lock"></i> Password</label>
+          <input type="password" id="auth-password" class="form-input" required placeholder="Enter your password">
+        </div>
+        <button type="submit" class="btn btn-primary" style="width:100%; margin-top: 15px; padding: 14px;">
+          <i class="fas fa-sign-in-alt"></i> <span id="auth-btn-text">Sign In</span>
+        </button>
+      </form>
+      <div class="auth-toggle">
+        <span id="auth-toggle-text">Don't have an account?</span>
+        <a href="#" id="auth-toggle">Create Account</a>
+      </div>
+      <div class="auth-footer">
+        <i class="fas fa-lock"></i> Secured with AES-256 encryption
+      </div>
+    </div>
+  </div>
+
+  <!-- Main App -->
+  <div id="app-section" class="app-container hidden">
+    <!-- Sidebar -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <h1><i class="fas fa-shield-halved"></i> SecureFS</h1>
+      </div>
+      
+      <nav class="sidebar-nav">
+        <div class="nav-section">
+          <div class="nav-item active" data-page="dashboard"><i class="fas fa-chart-line"></i> Dashboard</div>
+          <div class="nav-item" data-page="files"><i class="fas fa-folder-open"></i> All Files</div>
+          <div class="nav-item" data-page="favorites"><i class="fas fa-star"></i> Favorites</div>
+          <div class="nav-item" data-page="trash"><i class="fas fa-trash-can"></i> Trash</div>
+          <div class="nav-item" data-page="security"><i class="fas fa-shield-halved"></i> Security</div>
+        </div>
+        
+        <div class="nav-section admin-only hidden">
+          <div class="nav-section-title">Administration</div>
+          <div class="nav-item" data-page="users"><i class="fas fa-users"></i> Users</div>
+          <div class="nav-item" data-page="audit"><i class="fas fa-clipboard-list"></i> Audit Logs</div>
+          <div class="nav-item" data-page="breach"><i class="fas fa-bug"></i> Threat Detection</div>
+          <div class="nav-item" data-page="system"><i class="fas fa-server"></i> System</div>
+        </div>
+        
+        <div class="nav-section">
+          <div class="nav-section-title">Quick Actions</div>
+          <div class="nav-item" onclick="openUploadModal()"><i class="fas fa-cloud-arrow-up"></i> Upload File</div>
+          <div class="nav-item" data-page="decrypt"><i class="fas fa-lock-open"></i> Decrypt File</div>
+        </div>
+      </nav>
+      
+      <div class="sidebar-footer">
+        <div class="user-card">
+          <div class="user-avatar" id="user-avatar">A</div>
+          <div class="user-info">
+            <div class="name" id="sidebar-username">Admin</div>
+            <div class="role" id="sidebar-role">Administrator</div>
+          </div>
+          <button class="btn btn-icon btn-ghost" onclick="logout()" title="Sign Out"><i class="fas fa-right-from-bracket"></i></button>
+        </div>
+        <div class="mt-2">
+          <div class="text-muted" style="font-size: 12px;"><i class="fas fa-hard-drive"></i> <span id="storage-text">0 / 500 MB</span></div>
+          <div class="progress-bar">
+            <div class="fill" id="storage-bar" style="width: 0%"></div>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main-content">
+      <!-- Dashboard Page -->
+      <div id="page-dashboard" class="page">
+        <div class="page-header">
+          <div>
+            <h1 class="page-title">Dashboard</h1>
+            <p class="page-subtitle">Welcome back! Here's your file overview.</p>
+          </div>
+          <div class="header-actions">
+            <button class="btn btn-primary" onclick="openUploadModal()"><i class="fas fa-cloud-arrow-up"></i> Upload File</button>
+          </div>
+        </div>
+        
+        <div class="stats-grid" id="stats-grid"></div>
+        
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-header">
+              <h3 class="card-title"><i class="fas fa-clock"></i> Recent Files</h3>
+              <button class="btn btn-ghost btn-sm" onclick="showPage('files')">View All</button>
+            </div>
+            <div id="recent-files" class="activity-list"></div>
+          </div>
+          
+          <div class="card">
+            <div class="card-header">
+              <h3 class="card-title"><i class="fas fa-history"></i> Recent Activity</h3>
+            </div>
+            <div id="recent-activity" class="activity-list"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Files Page -->
+      <div id="page-files" class="page hidden">
+        <div class="page-header">
+          <div>
+            <h1 class="page-title">All Files</h1>
+            <p class="page-subtitle" id="files-subtitle">Manage your files</p>
+          </div>
+          <div class="header-actions">
+            <button class="btn btn-primary" onclick="openUploadModal()"><i class="fas fa-cloud-arrow-up"></i> Upload</button>
+            <button class="btn btn-ghost hidden" id="bulk-download-btn" onclick="bulkDownload()"><i class="fas fa-download"></i> Download Selected</button>
+            <button class="btn btn-danger hidden" id="bulk-delete-btn" onclick="bulkDelete()"><i class="fas fa-trash"></i> Delete Selected</button>
+          </div>
+        </div>
+        
+        <div class="file-controls">
+          <div class="search-box">
+            <i class="fas fa-search"></i>
+            <input type="text" id="file-search" placeholder="Search files..." oninput="debounceSearch()">
+          </div>
+          <select class="form-input" style="width: auto;" onchange="filterFiles(this.value)" id="file-filter">
+            <option value="">All Types</option>
+            <option value="image">Images</option>
+            <option value="application/pdf">PDF</option>
+            <option value="text">Text</option>
+          </select>
+          <div class="view-toggle">
+            <button class="btn btn-icon btn-ghost" id="view-grid" onclick="setView('grid')" title="Grid View"><i class="fas fa-grip"></i></button>
+            <button class="btn btn-icon btn-ghost" id="view-list" onclick="setView('list')" title="List View"><i class="fas fa-list"></i></button>
+          </div>
+        </div>
+        
+        <div id="files-container"></div>
+        <div id="files-pagination" class="pagination"></div>
+      </div>
+
+      <!-- Favorites Page -->
+      <div id="page-favorites" class="page hidden">
+        <div class="page-header">
+          <h1 class="page-title"><i class="fas fa-star"></i> Favorites</h1>
+        </div>
+        <div id="favorites-container" class="file-grid"></div>
+      </div>
+
+      <!-- Trash Page -->
+      <div id="page-trash" class="page hidden">
+        <div class="page-header">
+          <div>
+            <h1 class="page-title"><i class="fas fa-trash-can"></i> Trash</h1>
+            <p class="page-subtitle">Files are permanently deleted after 30 days</p>
+          </div>
+          <div class="header-actions">
+            <button class="btn btn-danger" onclick="emptyTrash()"><i class="fas fa-trash"></i> Empty Trash</button>
+          </div>
+        </div>
+        <div id="trash-container" class="file-grid"></div>
+      </div>
+
+      <!-- Security Page -->
+      <div id="page-security" class="page hidden">
+        <div class="page-header">
+          <div>
+            <h1 class="page-title"><i class="fas fa-shield-halved"></i> Security Center</h1>
+            <p class="page-subtitle">Monitor and manage your account security</p>
+          </div>
+          <div class="header-actions">
+            <button class="btn btn-primary" onclick="verifyAllFiles()"><i class="fas fa-check-double"></i> Verify All Files</button>
+          </div>
+        </div>
+        
+        <!-- Security Score -->
+        <div class="stats-grid mb-4" id="security-score-grid">
+          <div class="stat-card" id="security-score-card">
+            <div class="icon"><i class="fa-solid fa-gauge-high"></i></div>
+            <div class="value" id="security-score">--</div>
+            <div class="label">Security Score</div>
+          </div>
+          <div class="stat-card green">
+            <div class="icon"><i class="fa-solid fa-key"></i></div>
+            <div class="value" id="security-2fa">Off</div>
+            <div class="label">Two-Factor Auth</div>
+          </div>
+          <div class="stat-card blue">
+            <div class="icon"><i class="fa-solid fa-clock"></i></div>
+            <div class="value" id="security-password-age">--</div>
+            <div class="label">Password Age (days)</div>
+          </div>
+          <div class="stat-card yellow">
+            <div class="icon"><i class="fa-solid fa-desktop"></i></div>
+            <div class="value" id="security-sessions">0</div>
+            <div class="label">Active Sessions</div>
+          </div>
+        </div>
+        
+        <div class="grid-2-col">
+          <!-- Active Sessions -->
+          <div class="card">
+            <div class="card-header flex items-center justify-between">
+              <h3><i class="fas fa-laptop"></i> Active Sessions</h3>
+              <button class="btn btn-danger btn-sm" onclick="terminateAllSessions()"><i class="fas fa-power-off"></i> End All</button>
+            </div>
+            <div id="sessions-list" class="mt-3"></div>
+          </div>
+          
+          <!-- Security Alerts -->
+          <div class="card">
+            <h3 class="mb-3"><i class="fas fa-bell"></i> Security Alerts</h3>
+            <div id="security-alerts"></div>
+          </div>
+        </div>
+        
+        <!-- Recent Security Events -->
+        <div class="card mt-4">
+          <div class="card-header flex items-center justify-between">
+            <h3><i class="fas fa-history"></i> Recent Security Events</h3>
+          </div>
+          <div id="security-events-list" class="mt-3"></div>
+        </div>
+        
+        <!-- File Integrity -->
+        <div class="card mt-4">
+          <div class="card-header flex items-center justify-between">
+            <h3><i class="fas fa-file-shield"></i> File Integrity Status</h3>
+            <span class="badge" id="files-needing-verification">0 files need verification</span>
+          </div>
+          <div id="integrity-results" class="mt-3" style="display: none;"></div>
+        </div>
+        
+        <!-- Encryption Information -->
+        <div class="card mt-4">
+          <div class="card-header flex items-center justify-between">
+            <h3><i class="fas fa-lock"></i> Encryption Details</h3>
+            <button class="btn btn-ghost btn-sm" onclick="loadEncryptionInfo()"><i class="fas fa-sync"></i> Refresh</button>
+          </div>
+          <div id="encryption-info" class="mt-3">
+            <p class="text-muted">Click refresh to load encryption details</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Breach Detection Page (Admin) -->
+      <div id="page-breach" class="page hidden">
+        <div class="page-header">
+          <div>
+            <h1 class="page-title"><i class="fas fa-bug"></i> Threat Detection</h1>
+            <p class="page-subtitle">Monitor and respond to security threats</p>
+          </div>
+          <div class="header-actions">
+            <button class="btn btn-ghost" onclick="exportSecurityEvents()"><i class="fas fa-download"></i> Export Events</button>
+            <button class="btn btn-primary" onclick="loadBreachAnalysis()"><i class="fas fa-sync"></i> Refresh Analysis</button>
+          </div>
+        </div>
+        
+        <!-- Threat Level -->
+        <div class="card mb-4" id="threat-level-card">
+          <div class="flex items-center justify-between">
+            <div>
+              <h2 class="mb-1"><i class="fas fa-shield-virus"></i> Current Threat Level</h2>
+              <p class="text-muted" id="threat-analysis-time">Last updated: --</p>
+            </div>
+            <div class="threat-level" id="threat-level-badge">
+              <span class="badge badge-success">LOW</span>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Summary Stats -->
+        <div class="stats-grid mb-4" id="threat-stats-grid">
+          <div class="stat-card yellow">
+            <div class="icon"><i class="fa-solid fa-triangle-exclamation"></i></div>
+            <div class="value" id="threat-failed-logins">0</div>
+            <div class="label">Failed Logins (24h)</div>
+          </div>
+          <div class="stat-card red">
+            <div class="icon"><i class="fa-solid fa-user-lock"></i></div>
+            <div class="value" id="threat-locked-accounts">0</div>
+            <div class="label">Locked Accounts</div>
+          </div>
+          <div class="stat-card blue">
+            <div class="icon"><i class="fa-solid fa-network-wired"></i></div>
+            <div class="value" id="threat-suspicious-ips">0</div>
+            <div class="label">Suspicious IPs</div>
+          </div>
+          <div class="stat-card green">
+            <div class="icon"><i class="fa-solid fa-chart-line"></i></div>
+            <div class="value" id="threat-total-events">0</div>
+            <div class="label">Events (24h)</div>
+          </div>
+        </div>
+        
+        <div class="grid-2-col">
+          <!-- Suspicious IPs -->
+          <div class="card">
+            <h3 class="mb-3"><i class="fas fa-globe"></i> Suspicious IP Addresses</h3>
+            <div id="suspicious-ips-list"></div>
+          </div>
+          
+          <!-- Brute Force Targets -->
+          <div class="card">
+            <h3 class="mb-3"><i class="fas fa-user-shield"></i> Brute Force Targets</h3>
+            <div id="brute-force-list"></div>
+          </div>
+        </div>
+        
+        <!-- Multi-location Users -->
+        <div class="card mt-4">
+          <h3 class="mb-3"><i class="fas fa-map-marker-alt"></i> Multi-Location Sessions</h3>
+          <div id="multi-location-list"></div>
+        </div>
+        
+        <!-- Recommendations -->
+        <div class="card mt-4">
+          <h3 class="mb-3"><i class="fas fa-lightbulb"></i> Security Recommendations</h3>
+          <div id="recommendations-list"></div>
+        </div>
+        
+        <!-- Session Analytics -->
+        <div class="card mt-4">
+          <h3 class="mb-3"><i class="fas fa-chart-pie"></i> Session Analytics</h3>
+          <div id="session-analytics"></div>
+        </div>
+      </div>
+
+      <!-- Users Page (Admin) -->
+      <div id="page-users" class="page hidden">
+        <div class="page-header">
+          <h1 class="page-title"><i class="fas fa-users"></i> User Management</h1>
+        </div>
+        <div class="card">
+          <div class="search-box mb-4">
+            <i class="fas fa-search"></i>
+            <input type="text" id="user-search" placeholder="Search users..." oninput="debounceUserSearch()">
+          </div>
+          <div class="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th>User</th>
+                  <th>Email</th>
+                  <th>Role</th>
+                  <th>Storage</th>
+                  <th>Created</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="users-table"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Audit Page (Admin) -->
+      <div id="page-audit" class="page hidden">
+        <div class="page-header">
+          <h1 class="page-title"><i class="fas fa-clipboard-list"></i> Audit Logs</h1>
+        </div>
+        <div class="card">
+          <div id="audit-list"></div>
+        </div>
+      </div>
+
+      <!-- System Page (Admin) -->
+      <div id="page-system" class="page hidden">
+        <div class="page-header">
+          <h1 class="page-title"><i class="fas fa-server"></i> System Overview</h1>
+        </div>
+        <div class="stats-grid" id="system-stats"></div>
+      </div>
+
+      <!-- Decrypt File Page -->
+      <div id="page-decrypt" class="page hidden">
+        <div class="page-header">
+          <div>
+            <h1 class="page-title"><i class="fas fa-lock-open"></i> Decrypt Encrypted File</h1>
+            <p class="page-subtitle">Decrypt encrypted files using your encryption key</p>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 gap-4">
+          <!-- Instructions -->
+          <div class="card">
+            <h3 class="mb-2"><i class="fas fa-circle-info"></i> How It Works</h3>
+            <div class="text-muted">
+              <ol style="padding-left: 20px; line-height: 1.8;">
+                <li><strong>Upload your encrypted file</strong> - This is typically a .enc file that you exported or downloaded</li>
+                <li><strong>Enter the encryption key</strong> - The key you used when encrypting the file (password/passphrase)</li>
+                <li><strong>Click 'Decrypt'</strong> - The application will decrypt the file using your key</li>
+                <li><strong>Download the decrypted file</strong> - The original unencrypted file will be ready for download</li>
+              </ol>
+              <div class="mt-3 p-2" style="background-color: rgba(59, 130, 246, 0.1); border-left: 3px solid #3b82f6; border-radius: 4px;">
+                <i class="fas fa-lightbulb"></i> <strong>Tip:</strong> Encryption keys are case-sensitive. Make sure to enter the exact key you used.
+              </div>
+            </div>
+          </div>
+
+          <!-- Decryption Form -->
+          <div class="card">
+            <h3 class="mb-3"><i class="fas fa-shield"></i> Decrypt Your File</h3>
+            
+            <!-- Quick Test Section -->
+            <div style="padding: 12px; background-color: rgba(34, 197, 94, 0.1); border: 1px solid #22c55e; border-radius: 4px; margin-bottom: 16px;">
+              <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;">
+                <div>
+                  <div style="font-weight: 500; color: var(--text);"><i class="fas fa-flask"></i> New to encryption?</div>
+                  <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">Create a test file to practice decryption</div>
+                </div>
+                <button type="button" class="btn btn-success btn-sm" onclick="createTestEncryptedFile()" id="create-test-btn">
+                  <i class="fas fa-file-circle-plus"></i> Create Test File
+                </button>
+              </div>
+            </div>
+            
+            <form id="decrypt-form" style="display: flex; flex-direction: column; gap: 16px;">
+              <!-- File Upload -->
+              <div>
+                <label class="form-label">Encrypted File <span class="text-danger">*</span></label>
+                <div class="file-upload-area" id="decrypt-file-drop">
+                  <input 
+                    type="file" 
+                    id="decrypt-file-input" 
+                    accept=".enc,application/octet-stream"
+                    style="display: none;"
+                  />
+                  <div style="text-align: center; padding: 32px 16px;">
+                    <i class="fas fa-file-upload" style="font-size: 32px; color: #3b82f6; margin-bottom: 12px; display: block;"></i>
+                    <p style="margin: 0; font-weight: 500;">Drag and drop your encrypted file here</p>
+                    <p style="margin: 8px 0 0 0; font-size: 12px; color: #6b7280;">or <a href="#" style="color: #3b82f6; text-decoration: none;" onclick="document.getElementById('decrypt-file-input').click(); return false;">click to browse</a></p>
+                    <p style="margin: 8px 0 0 0; font-size: 11px; color: #9ca3af;">Typically .enc files</p>
+                  </div>
+                  <div id="decrypt-file-preview" style="display: none; padding: 12px; background-color: rgba(34, 197, 94, 0.1); border: 1px solid #22c55e; border-radius: 4px; margin-top: 12px;">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                      <i class="fas fa-check-circle" style="color: #22c55e;"></i>
+                      <span id="decrypt-file-name"></span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Encryption Key -->
+              <div>
+                <label class="form-label">Encryption Key <span class="text-danger">*</span></label>
+                <input 
+                  type="password" 
+                  id="decrypt-key-input" 
+                  placeholder="Enter the key/password used to encrypt the file"
+                  class="form-input"
+                  minlength="8"
+                />
+                <p style="font-size: 12px; color: #6b7280; margin-top: 6px;">
+                  <i class="fas fa-eye-slash"></i> Your key is processed securely and never stored
+                </p>
+              </div>
+
+              <!-- Show/Hide Key Toggle -->
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <input 
+                  type="checkbox" 
+                  id="decrypt-show-key" 
+                  style="width: 16px; height: 16px; cursor: pointer;"
+                />
+                <label for="decrypt-show-key" style="cursor: pointer; user-select: none;">Show encryption key</label>
+              </div>
+
+              <!-- Decrypt Button -->
+              <button 
+                type="submit" 
+                class="btn btn-primary" 
+                id="decrypt-submit-btn"
+                style="width: 100%;"
+              >
+                <i class="fas fa-shield-halved"></i> Decrypt File
+              </button>
+
+              <!-- Progress -->
+              <div id="decrypt-progress" style="display: none;">
+                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                  <i class="fas fa-spinner fa-spin" style="color: #3b82f6;"></i>
+                  <span>Decrypting your file...</span>
+                </div>
+                <div class="progress-bar" style="height: 4px;">
+                  <div class="fill" id="decrypt-progress-bar" style="width: 0%;"></div>
+                </div>
+              </div>
+
+              <!-- Status Messages -->
+              <div id="decrypt-status" style="display: none;"></div>
+            </form>
+          </div>
+
+          <!-- Recent Decryptions -->
+          <div class="card">
+            <h3 class="mb-2"><i class="fas fa-history"></i> Decryption History</h3>
+            <div id="decrypt-history" class="text-muted">
+              <p>No recent decryptions. Your decryption activity will appear here.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Mobile Menu Toggle -->
+  <button class="menu-toggle" onclick="toggleSidebar()"><i class="fas fa-bars"></i></button>
+
+  <!-- Toast Container -->
+  <div class="toast-container" id="toast-container"></div>
+
+  <!-- Modals -->
+  <div class="modal-overlay" id="upload-modal">
+    <div class="modal">
+      <div class="modal-header">
+        <h2><i class="fas fa-cloud-arrow-up"></i> Upload File</h2>
+        <button class="modal-close" onclick="closeModal('upload-modal')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="upload-form">
+          <div class="form-group">
+            <label>Select File</label>
+            <div class="form-input form-input-file" id="drop-zone">
+              <input type="file" id="file-input" style="display: none;">
+              <i class="fas fa-cloud-arrow-up" style="font-size: 32px; color: var(--accent); margin-bottom: 10px;"></i>
+              <div>Drag and drop or click to select</div>
+              <div class="text-muted mt-2" id="file-name-display">No file selected</div>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Description (optional)</label>
+            <input type="text" id="file-description" class="form-input" placeholder="Add a description...">
+          </div>
+          <div class="form-group">
+            <label>Tags (optional)</label>
+            <input type="text" id="file-tags" class="form-input" placeholder="Comma-separated tags">
+          </div>
+          <div class="form-group">
+            <label class="form-checkbox">
+              <input type="checkbox" id="encrypt-file" checked>
+              <i class="fas fa-lock"></i> Encrypt file (AES-256-GCM)
+            </label>
+            <div class="text-muted" style="font-size: 11px; margin-top: 5px; padding-left: 24px;">
+              <i class="fa-solid fa-shield-check"></i> Your file will be encrypted with AES-256-GCM using scrypt key derivation. 
+              Only you can decrypt it.
+            </div>
+          </div>
+          <div class="form-group" id="user-key-section" style="display: none;">
+            <label class="form-checkbox">
+              <input type="checkbox" id="use-user-key">
+              <i class="fas fa-key"></i> Use my own encryption key
+            </label>
+            <div class="text-muted" style="font-size: 11px; margin-top: 5px; padding-left: 24px;">
+              <i class="fas fa-exclamation-triangle" style="color: var(--warning);"></i> 
+              You must remember this key - the server will NOT store it. If you lose it, the file cannot be recovered.
+            </div>
+            <div id="user-key-input-section" style="display: none; margin-top: 10px;">
+              <div style="position: relative;">
+                <input type="password" id="upload-encryption-key" class="form-input" placeholder="Enter encryption key (min 8 characters)" minlength="8">
+                <button type="button" class="btn btn-ghost" style="position: absolute; right: 5px; top: 50%; transform: translateY(-50%); padding: 4px 8px;" onclick="toggleUploadKeyVisibility()">
+                  <i class="fas fa-eye" id="upload-key-eye"></i>
+                </button>
+              </div>
+              <div class="key-strength-indicator" style="margin-top: 8px;">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                  <span style="font-size: 11px; color: var(--text-muted);">Key Strength:</span>
+                  <span id="upload-key-strength" style="font-size: 11px; font-weight: 600;">-</span>
+                </div>
+                <div style="height: 4px; background: var(--border); border-radius: 2px; margin-top: 4px; overflow: hidden;">
+                  <div id="upload-key-strength-bar" style="height: 100%; width: 0%; transition: all 0.3s;"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <button type="submit" class="btn btn-primary" style="width: 100%;"><i class="fas fa-upload"></i> Upload</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="preview-modal">
+    <div class="modal" id="preview-modal-content" style="max-width: 800px;">
+      <div class="modal-header">
+        <h2 id="preview-title">Preview</h2>
+        <button class="modal-close" onclick="closePreviewModal()">&times;</button>
+      </div>
+      <div class="modal-body" id="preview-content"></div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" onclick="closePreviewModal()">Close</button>
+        <button class="btn btn-primary" id="preview-download-btn"><i class="fas fa-download"></i> Download</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="file-details-modal">
+    <div class="modal">
+      <div class="modal-header">
+        <h2><i class="fas fa-file-lines"></i> File Details</h2>
+        <button class="modal-close" onclick="closeModal('file-details-modal')">&times;</button>
+      </div>
+      <div class="modal-body" id="file-details-content"></div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="settings-modal">
+    <div class="modal">
+      <div class="modal-header">
+        <h2><i class="fas fa-gear"></i> Settings</h2>
+        <button class="modal-close" onclick="closeModal('settings-modal')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <h3 class="mb-4">Change Password</h3>
+        <form id="password-form">
+          <div class="form-group">
+            <label>Current Password</label>
+            <input type="password" id="current-password" class="form-input" required>
+          </div>
+          <div class="form-group">
+            <label>New Password</label>
+            <input type="password" id="new-password" class="form-input" required>
+          </div>
+          <button type="submit" class="btn btn-primary"><i class="fas fa-key"></i> Change Password</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Encryption Key Modal -->
+  <div class="modal-overlay" id="encryption-key-modal">
+    <div class="modal" style="max-width: 500px;">
+      <div class="modal-header">
+        <h2><i class="fas fa-key"></i> Create Encryption Key</h2>
+        <button class="modal-close" onclick="closeModal('encryption-key-modal')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div style="background-color: rgba(249, 115, 22, 0.1); border: 1px solid #f97316; border-radius: 4px; padding: 12px; margin-bottom: 16px;">
+          <div style="display: flex; gap: 8px; align-items: flex-start;">
+            <i class="fas fa-exclamation-triangle" style="color: #f97316; margin-top: 2px;"></i>
+            <div style="font-size: 13px; color: var(--text);">
+              <strong>Important:</strong> Make sure to save this key somewhere safe. You'll need it to decrypt the file later!
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <label class="form-label" style="margin-bottom: 8px;">Encryption Key (8+ characters)</label>
+          <div style="display: flex; gap: 8px;">
+            <input 
+              type="password" 
+              id="modal-encryption-key" 
+              class="form-input"
+              placeholder="Enter a strong encryption key"
+              minlength="8"
+              style="flex: 1;"
+            />
+            <button 
+              type="button" 
+              class="btn btn-ghost btn-icon" 
+              id="show-key-btn"
+              onclick="toggleKeyVisibility()"
+              title="Show/Hide Key"
+              style="width: 44px; height: 44px; margin-top: 0;"
+            >
+              <i class="fas fa-eye-slash"></i>
+            </button>
+          </div>
+        </div>
+
+        <!-- Key Display -->
+        <div id="key-display-area" style="display: none; margin-top: 12px;">
+          <label class="form-label">Your Key</label>
+          <div style="background: var(--bg-tertiary); border: 1px solid var(--border); border-radius: 4px; padding: 12px; display: flex; align-items: center; justify-content: space-between;">
+            <code id="displayed-key" style="flex: 1; word-break: break-all; font-size: 13px; font-weight: 500;">
+            </code>
+            <button 
+              type="button" 
+              class="btn btn-ghost btn-icon btn-sm"
+              onclick="copyKeyToClipboard()"
+              id="copy-key-btn"
+              title="Copy to Clipboard"
+              style="margin-left: 8px; width: 36px; height: 36px;"
+            >
+              <i class="fas fa-copy"></i>
+            </button>
+          </div>
+          <div style="font-size: 12px; color: var(--text-muted); margin-top: 8px;">
+            <i class="fas fa-check-circle" style="color: var(--success);"></i> You can now safely copy and save this key
+          </div>
+        </div>
+
+        <!-- Key Strength Indicator -->
+        <div id="key-strength" style="margin-top: 12px; display: none;">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
+            <label class="form-label" style="margin: 0;">Key Strength</label>
+            <span id="strength-text" style="font-size: 12px; font-weight: 500;"></span>
+          </div>
+          <div style="height: 4px; background: var(--bg-tertiary); border-radius: 2px; overflow: hidden;">
+            <div id="strength-bar" style="height: 100%; width: 0%; background: var(--success); transition: all 0.3s;"></div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-ghost" onclick="closeModal('encryption-key-modal')">Cancel</button>
+        <button type="button" class="btn btn-primary" id="create-test-file-btn" onclick="proceedCreateTestFile()">
+          <i class="fas fa-file-circle-plus"></i> Create Test File
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ============ STATE ============
+    const API = '/api';
+    let token = localStorage.getItem('token');
+    let user = JSON.parse(localStorage.getItem('user') || 'null');
+    let currentPage = 1;
+    let currentView = 'grid';
+    let currentFolder = null;
+    let selectedFiles = new Set();
+    let searchTimeout = null;
+    let isLogin = true;
+
+    // ============ INIT ============
+    if (token && user) {
+      showApp();
+    }
+
+    // ============ AUTH ============
+    document.getElementById('auth-toggle').onclick = (e) => {
+      e.preventDefault();
+      isLogin = !isLogin;
+      document.getElementById('username-group').classList.toggle('hidden', isLogin);
+      document.getElementById('auth-btn-text').textContent = isLogin ? 'Login' : 'Register';
+      document.getElementById('auth-toggle').textContent = isLogin ? 'Register' : 'Login';
+      document.getElementById('auth-toggle-text').textContent = isLogin ? "Don't have an account?" : "Already have an account?";
+    };
+
+    document.getElementById('auth-form').onsubmit = async (e) => {
+      e.preventDefault();
+      const email = document.getElementById('auth-email').value;
+      const password = document.getElementById('auth-password').value;
+      const username = document.getElementById('auth-username').value;
+
+      try {
+        const endpoint = isLogin ? '/auth/login' : '/auth/register';
+        const body = isLogin ? { email, password } : { username, email, password };
+        const res = await api(endpoint, 'POST', body);
+
+        if (res.success) {
+          if (isLogin) {
+            token = res.data.token;
+            user = res.data.user;
+            localStorage.setItem('token', token);
+            localStorage.setItem('user', JSON.stringify(user));
+            showApp();
+          } else {
+            toast('Registration successful! Please login.', 'success');
+            document.getElementById('auth-toggle').click();
+          }
+        } else {
+          showAuthAlert(res.message, 'error');
+        }
+      } catch (err) {
+        showAuthAlert('Connection failed', 'error');
+      }
+    };
+
+    function showAuthAlert(msg, type) {
+      document.getElementById('auth-alert').innerHTML = `
+        <div class="card" style="background: ${type === 'error' ? 'rgba(239,68,68,0.2)' : 'rgba(34,197,94,0.2)'}; 
+             border-color: ${type === 'error' ? 'var(--danger)' : 'var(--success)'}; 
+             color: ${type === 'error' ? 'var(--danger)' : 'var(--success)'}; 
+             margin-bottom: 15px; padding: 12px;">
+          ${msg}
+        </div>
+      `;
+    }
+
+    // ============ API ============
+    async function api(path, method = 'GET', body = null) {
+      const opts = { method, headers: { 'Content-Type': 'application/json' } };
+      if (token) opts.headers['Authorization'] = `Bearer ${token}`;
+      if (body) opts.body = JSON.stringify(body);
+      const res = await fetch(API + path, opts);
+      if (res.status === 401) {
+        logout();
+        return { success: false, message: 'Session expired' };
+      }
+      return res.json();
+    }
+
+    async function apiForm(path, formData) {
+      const opts = { method: 'POST', headers: {}, body: formData };
+      if (token) opts.headers['Authorization'] = `Bearer ${token}`;
+      const res = await fetch(API + path, opts);
+      return res.json();
+    }
+
+    // ============ APP ============
+    function showApp() {
+      document.getElementById('auth-section').classList.add('hidden');
+      document.getElementById('app-section').classList.remove('hidden');
+      
+      document.getElementById('sidebar-username').textContent = user.username;
+      document.getElementById('sidebar-role').textContent = user.role;
+      document.getElementById('user-avatar').textContent = user.username.charAt(0).toUpperCase();
+      
+      if (user.role === 'admin') {
+        document.querySelectorAll('.admin-only').forEach(el => el.classList.remove('hidden'));
+      }
+      
+      // Show editor-only elements for admin and editor roles
+      if (user.role === 'admin' || user.role === 'editor') {
+        document.querySelectorAll('.editor-only').forEach(el => el.classList.remove('hidden'));
+      }
+      
+      updateStorageDisplay();
+      loadDashboard();
+      
+      // Setup navigation
+      document.querySelectorAll('.nav-item[data-page]').forEach(item => {
+        item.onclick = () => showPage(item.dataset.page);
+      });
+    }
+
+    function logout() {
+      api('/auth/logout', 'POST');
+      localStorage.clear();
+      location.reload();
+    }
+
+    function showPage(page) {
+      document.querySelectorAll('.page').forEach(p => p.classList.add('hidden'));
+      document.getElementById(`page-${page}`).classList.remove('hidden');
+      
+      document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+      document.querySelector(`.nav-item[data-page="${page}"]`)?.classList.add('active');
+      
+      selectedFiles.clear();
+      updateBulkActions();
+      
+      switch(page) {
+        case 'dashboard': loadDashboard(); break;
+        case 'files': loadFiles(); break;
+        case 'folders': loadFolders(); break;
+        case 'favorites': loadFavorites(); break;
+        case 'shared': loadShared(); break;
+        case 'trash': loadTrash(); break;
+        case 'security': loadSecurityDashboard(); break;
+        case 'decrypt': break; // Just show the page, no loading needed
+        case 'users': loadUsers(); break;
+        case 'audit': loadAudit(); break;
+        case 'breach': loadBreachAnalysis(); break;
+        case 'system': loadSystemStats(); break;
+      }
+    }
+
+    // ============ DASHBOARD ============
+    async function loadDashboard() {
+      const res = await api('/dashboard');
+      if (!res.success) return;
+      
+      const { stats, recentActivity, recentFiles } = res.data;
+      
+      document.getElementById('stats-grid').innerHTML = `
+        <div class="stat-card blue">
+          <div class="icon"><i class="fa-regular fa-folder"></i></div>
+          <div class="value">${stats.totalFiles}</div>
+          <div class="label">Total Files</div>
+        </div>
+        <div class="stat-card green">
+          <div class="icon"><i class="fa-solid fa-shield-halved"></i></div>
+          <div class="value">${stats.encryptedFiles}</div>
+          <div class="label">Encrypted</div>
+        </div>
+        <div class="stat-card yellow">
+          <div class="icon"><i class="fa-regular fa-star"></i></div>
+          <div class="value">${stats.favoriteCount}</div>
+          <div class="label">Favorites</div>
+        </div>
+
+      `;
+      
+      updateStorageDisplay(stats.storageUsed, stats.storageQuota);
+      
+      document.getElementById('recent-files').innerHTML = recentFiles.length ? 
+        recentFiles.map(f => `
+          <div class="activity-item" onclick="openFileDetails('${f.id}')" style="cursor: pointer;">
+            <div class="activity-icon">${getFileIconSimple(f.mimeType)}</div>
+            <div class="activity-content">
+              <div class="text">${escapeHtml(f.name)}</div>
+              <div class="time">${formatSize(f.size)} • ${timeAgo(f.createdAt)}</div>
+            </div>
+          </div>
+        `).join('') :
+        '<div class="empty-state"><p>No files yet</p></div>';
+      
+      document.getElementById('recent-activity').innerHTML = recentActivity.length ?
+        recentActivity.map(a => `
+          <div class="activity-item">
+            <div class="activity-icon">${getActionIcon(a.action)}</div>
+            <div class="activity-content">
+              <div class="text">${a.action.replace(/_/g, ' ')}</div>
+              <div class="time">${timeAgo(a.timestamp)}</div>
+            </div>
+          </div>
+        `).join('') :
+        '<div class="empty-state"><p>No activity yet</p></div>';
+    }
+
+    function updateStorageDisplay(used, quota) {
+      used = used || user.storageUsed || 0;
+      quota = quota || user.storageQuota || 500 * 1024 * 1024;
+      const percent = Math.round((used / quota) * 100);
+      
+      document.getElementById('storage-text').textContent = `${formatSize(used)} / ${formatSize(quota)}`;
+      const bar = document.getElementById('storage-bar');
+      bar.style.width = `${percent}%`;
+      bar.className = 'fill' + (percent > 90 ? ' danger' : percent > 70 ? ' warning' : '');
+    }
+
+    // ============ FILES ============
+    async function loadFiles(query = '') {
+      const search = document.getElementById('file-search')?.value || query;
+      const filter = document.getElementById('file-filter')?.value || '';
+      
+      const params = new URLSearchParams({ page: currentPage, limit: 20, search });
+      if (filter) params.append('mimeType', filter);
+      
+      const res = await api(`/files?${params}`);
+      if (!res.success) return;
+      
+      const { files, pagination } = res.data;
+      document.getElementById('files-subtitle').textContent = `${pagination.total} files`;
+      
+      renderFiles(files, 'files-container');
+      renderPagination(pagination, 'files-pagination');
+    }
+
+    function renderFiles(files, containerId) {
+      const container = document.getElementById(containerId);
+      
+      if (!files.length) {
+        container.innerHTML = `
+          <div class="empty-state">
+            <div class="icon"><i class="fa-regular fa-folder-open"></i></div>
+            <h3>No files found</h3>
+            <p>Upload your first file to get started</p>
+            <button class="btn btn-primary mt-4" onclick="openUploadModal()"><i class="fa-solid fa-cloud-arrow-up"></i> Upload File</button>
+          </div>
+        `;
+        return;
+      }
+      
+      container.className = currentView === 'grid' ? 'file-grid' : 'file-list';
+      
+      if (currentView === 'grid') {
+        container.innerHTML = files.map(f => `
+          <div class="file-card ${selectedFiles.has(f.id) ? 'selected' : ''}" 
+               onclick="handleFileClick(event, '${f.id}')" 
+               ondblclick="openFileDetails('${f.id}')">
+            <div class="checkbox" onclick="toggleFileSelect(event, '${f.id}')">${selectedFiles.has(f.id) ? '<i class="fa-solid fa-check"></i>' : ''}</div>
+            <button class="favorite-btn ${f.isFavorite ? 'active' : ''}" onclick="toggleFavorite(event, '${f.id}')">${f.isFavorite ? '<i class="fa-solid fa-star"></i>' : '<i class="fa-regular fa-star"></i>'}</button>
+            ${getFileIconFull(f.mimeType, f.name)}
+            <div class="file-name">${escapeHtml(f.name)}</div>
+            <div class="file-meta">
+              <span>${formatSize(f.size)}</span>
+              <span>${timeAgo(f.createdAt)}</span>
+            </div>
+            <div class="file-badges">
+              ${f.encrypted ? (f.userKeyEncrypted 
+                ? '<span class="file-badge" style="background: rgba(234, 179, 8, 0.2); color: #eab308;"><i class="fa-solid fa-key"></i> Your Key</span>' 
+                : '<span class="file-badge encrypted"><i class="fa-solid fa-lock"></i> Encrypted</span>') 
+                : ''}
+              ${f.sharedCount > 0 ? `<span class="file-badge shared"><i class="fa-solid fa-users"></i> ${f.sharedCount}</span>` : ''}
+              ${f.tags?.slice(0, 2).map(t => `<span class="file-badge">${escapeHtml(t)}</span>`).join('') || ''}
+            </div>
+            <div class="file-actions" style="margin-top: 8px; display: flex; gap: 4px; justify-content: center;">
+              <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation(); previewFile('${f.id}', '${escapeHtml(f.name).replace(/'/g, "\\'")}')"><i class="fa-regular fa-eye"></i></button>
+              <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation(); downloadFile('${f.id}')"><i class="fa-solid fa-download"></i></button>
+            </div>
+          </div>
+        `).join('');
+      } else {
+        container.innerHTML = files.map(f => `
+          <div class="file-row" onclick="openFileDetails('${f.id}')">
+            ${getFileIconFull(f.mimeType, f.name)}
+            <div class="file-info">
+              <div class="file-name">${escapeHtml(f.name)}</div>
+              <div class="file-meta">${formatSize(f.size)} • ${timeAgo(f.createdAt)} ${f.encrypted ? (f.userKeyEncrypted ? '• <i class="fa-solid fa-key" style="color: #eab308;" title="Encrypted with your key"></i>' : '• <i class="fa-solid fa-lock"></i>') : ''}</div>
+            </div>
+            <div class="file-actions">
+              <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation(); previewFile('${f.id}', '${escapeHtml(f.name).replace(/'/g, "\\'")}')"><i class="fa-regular fa-eye"></i></button>
+              <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation(); downloadFile('${f.id}')"><i class="fa-solid fa-download"></i></button>
+            </div>
+          </div>
+        `).join('');
+      }
+    }
+
+    function renderPagination(pagination, containerId) {
+      const container = document.getElementById(containerId);
+      if (pagination.pages <= 1) {
+        container.innerHTML = '';
+        return;
+      }
+      
+      let html = `<button ${pagination.page === 1 ? 'disabled' : ''} onclick="goToPage(${pagination.page - 1})">←</button>`;
+      
+      for (let i = 1; i <= pagination.pages; i++) {
+        if (i === 1 || i === pagination.pages || (i >= pagination.page - 2 && i <= pagination.page + 2)) {
+          html += `<button class="${i === pagination.page ? 'active' : ''}" onclick="goToPage(${i})">${i}</button>`;
+        } else if (i === pagination.page - 3 || i === pagination.page + 3) {
+          html += '<button disabled>...</button>';
+        }
+      }
+      
+      html += `<button ${pagination.page === pagination.pages ? 'disabled' : ''} onclick="goToPage(${pagination.page + 1})">→</button>`;
+      container.innerHTML = html;
+    }
+
+    function goToPage(page) {
+      currentPage = page;
+      loadFiles();
+    }
+
+    function setView(view) {
+      currentView = view;
+      document.getElementById('view-grid').classList.toggle('btn-primary', view === 'grid');
+      document.getElementById('view-list').classList.toggle('btn-primary', view === 'list');
+      document.getElementById('view-grid').classList.toggle('btn-ghost', view !== 'grid');
+      document.getElementById('view-list').classList.toggle('btn-ghost', view !== 'list');
+      loadFiles();
+    }
+
+    function debounceSearch() {
+      clearTimeout(searchTimeout);
+      searchTimeout = setTimeout(() => {
+        currentPage = 1;
+        loadFiles();
+      }, 300);
+    }
+
+    function filterFiles(mimeType) {
+      currentPage = 1;
+      loadFiles();
+    }
+
+    function handleFileClick(event, fileId) {
+      if (event.ctrlKey || event.metaKey) {
+        toggleFileSelect(event, fileId);
+      }
+    }
+
+    function toggleFileSelect(event, fileId) {
+      event.stopPropagation();
+      if (selectedFiles.has(fileId)) {
+        selectedFiles.delete(fileId);
+      } else {
+        selectedFiles.add(fileId);
+      }
+      updateBulkActions();
+      // Re-render to show selection state
+      const card = event.target.closest('.file-card');
+      if (card) {
+        card.classList.toggle('selected', selectedFiles.has(fileId));
+        card.querySelector('.checkbox').innerHTML = selectedFiles.has(fileId) ? '<i class="fa-solid fa-check"></i>' : '';
+      }
+    }
+
+    function updateBulkActions() {
+      const hasSelection = selectedFiles.size > 0;
+      document.getElementById('bulk-download-btn')?.classList.toggle('hidden', !hasSelection);
+      document.getElementById('bulk-delete-btn')?.classList.toggle('hidden', !hasSelection);
+    }
+
+    async function bulkDownload() {
+      const fileIds = Array.from(selectedFiles);
+      toast(`Preparing ${fileIds.length} files for download...`, 'success');
+      
+      const res = await fetch(`${API}/files/download-multiple`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fileIds }),
+      });
+      
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `files-${Date.now()}.zip`;
+      a.click();
+      URL.revokeObjectURL(url);
+      
+      selectedFiles.clear();
+      updateBulkActions();
+    }
+
+    async function bulkDelete() {
+      if (!confirm(`Delete ${selectedFiles.size} files?`)) return;
+      
+      for (const id of selectedFiles) {
+        await api(`/files/${id}`, 'DELETE');
+      }
+      
+      toast(`${selectedFiles.size} files deleted`, 'success');
+      selectedFiles.clear();
+      updateBulkActions();
+      loadFiles();
+    }
+
+    async function toggleFavorite(event, fileId) {
+      event.stopPropagation();
+      const res = await api(`/files/${fileId}/favorite`, 'POST');
+      if (res.success) {
+        loadFiles();
+      }
+    }
+
+    // ============ FOLDERS ============
+    async function loadFolders(parentId = null) {
+      currentFolder = parentId;
+      const res = await api(`/folders?parentId=${parentId || ''}`);
+      if (!res.success) return;
+      
+      const { folders, files } = res.data;
+      
+      // Update path
+      updateFolderPath(parentId);
+      
+      const container = document.getElementById('folders-container');
+      
+      let html = '';
+      
+      // Render folders
+      html += folders.map(f => `
+        <div class="file-card" ondblclick="loadFolders('${f.id}')" style="border-left: 4px solid ${f.color || '#3b82f6'}">
+          <div class="file-icon"><i class="fa-solid fa-folder" style="color: ${f.color || '#3b82f6'}"></i></div>
+          <div class="file-name">${escapeHtml(f.name)}</div>
+          <div class="file-meta">Folder • ${timeAgo(f.createdAt)}</div>
+        </div>
+      `).join('');
+      
+      // Render files in folder
+      html += files.map(f => `
+        <div class="file-card" onclick="openFileDetails('${f.id}')">
+          ${getFileIconFull(f.mimeType, f.name)}
+          <div class="file-name">${escapeHtml(f.name)}</div>
+          <div class="file-meta">${formatSize(f.size)} • ${timeAgo(f.createdAt)}</div>
+        </div>
+      `).join('');
+      
+      container.innerHTML = html || '<div class="empty-state"><div class="icon"><i class="fa-regular fa-folder-open"></i></div><h3>Empty folder</h3></div>';
+    }
+
+    function updateFolderPath(folderId) {
+      // Simplified path for now
+      document.getElementById('folder-path').innerHTML = `
+        <span class="path-item ${!folderId ? 'current' : ''}" onclick="loadFolders(null)"><i class="fa-regular fa-folder"></i> Root</span>
+        ${folderId ? '<span class="separator">/</span><span class="path-item current">Current Folder</span>' : ''}
+      `;
+    }
+
+    // ============ FAVORITES ============
+    async function loadFavorites() {
+      const res = await api('/files?favorites=true');
+      if (!res.success) return;
+      renderFiles(res.data.files, 'favorites-container');
+    }
+
+    // ============ SHARED ============
+    async function loadShared() {
+      const res = await api('/files?shared=true');
+      if (!res.success) return;
+      
+      const container = document.getElementById('shared-container');
+      const files = res.data.files;
+      
+      if (!files.length) {
+        container.innerHTML = '<div class="empty-state"><div class="icon"><i class="fa-solid fa-share-nodes"></i></div><h3>No shared files</h3><p class="text-muted">Files shared with you or by you will appear here</p></div>';
+        return;
+      }
+      
+      // Separate shared with me vs shared by me
+      const sharedWithMe = files.filter(f => f.isSharedWithMe);
+      const sharedByMe = files.filter(f => f.isOwner && f.sharedCount > 0);
+      
+      let html = '';
+      
+      if (sharedWithMe.length > 0) {
+        html += '<h3 class="mb-3"><i class="fa-solid fa-inbox"></i> Shared with me</h3>';
+        html += '<div class="file-grid mb-4">' + sharedWithMe.map(f => `
+          <div class="file-card" onclick="openFileDetails('${f.id}')">
+            ${getFileIconFull(f.mimeType, f.name)}
+            <div class="file-name">${escapeHtml(f.name)}</div>
+            <div class="file-meta">${formatSize(f.size)} • from ${escapeHtml(f.ownerName || 'Unknown')}</div>
+            <div class="file-badges">
+              <span class="file-badge shared">Shared</span>
+            </div>
+          </div>
+        `).join('') + '</div>';
+      }
+      
+      if (sharedByMe.length > 0) {
+        html += '<h3 class="mb-3"><i class="fa-solid fa-share-from-square"></i> Shared by me</h3>';
+        html += '<div class="file-grid">' + sharedByMe.map(f => `
+          <div class="file-card" onclick="openFileDetails('${f.id}')">
+            ${getFileIconFull(f.mimeType, f.name)}
+            <div class="file-name">${escapeHtml(f.name)}</div>
+            <div class="file-meta">${formatSize(f.size)} • shared with ${f.sharedCount} user(s)</div>
+            <div class="file-badges">
+              <span class="file-badge shared"><i class="fa-solid fa-users"></i> ${f.sharedCount}</span>
+            </div>
+          </div>
+        `).join('') + '</div>';
+      }
+      
+      container.innerHTML = html;
+    }
+
+    // ============ TRASH ============
+    async function loadTrash() {
+      const res = await api('/files?trash=true');
+      if (!res.success) return;
+      
+      const container = document.getElementById('trash-container');
+      const files = res.data.files;
+      
+      if (!files.length) {
+        container.innerHTML = '<div class="empty-state"><div class="icon"><i class="fa-regular fa-trash-can"></i></div><h3>Trash is empty</h3></div>';
+        return;
+      }
+      
+      container.innerHTML = files.map(f => `
+        <div class="file-card">
+          ${getFileIconFull(f.mimeType, f.name)}
+          <div class="file-name">${escapeHtml(f.name)}</div>
+          <div class="file-meta">${formatSize(f.size)}</div>
+          <div class="file-meta" style="color: var(--danger);"><i class="fa-regular fa-trash-can"></i> Deleted: ${f.deletedAt ? new Date(f.deletedAt).toLocaleString() : 'Unknown'}</div>
+          <div class="file-badges mt-2">
+            <button class="btn btn-success btn-sm" onclick="restoreFile('${f.id}')"><i class="fa-solid fa-rotate-left"></i> Restore</button>
+            <button class="btn btn-danger btn-sm" onclick="deleteFilePermanent('${f.id}')"><i class="fa-regular fa-trash-can"></i> Delete Forever</button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    async function restoreFile(id) {
+      const res = await api(`/files/${id}/restore`, 'POST');
+      if (res.success) {
+        toast('File restored', 'success');
+        loadTrash();
+      } else {
+        toast(res.message, 'error');
+      }
+    }
+
+    async function deleteFilePermanent(id) {
+      if (!confirm('Permanently delete this file?')) return;
+      const res = await api(`/files/${id}?permanent=true`, 'DELETE');
+      if (res.success) {
+        toast('File permanently deleted', 'success');
+        loadTrash();
+      }
+    }
+
+    async function emptyTrash() {
+      if (!confirm('Permanently delete all files in trash?')) return;
+      const res = await api('/files/empty-trash', 'POST');
+      if (res.success) {
+        toast(`${res.data.deleted} files permanently deleted`, 'success');
+        loadTrash();
+      }
+    }
+
+    // ============ FILE OPERATIONS ============
+    async function openFileDetails(id) {
+      const res = await api(`/files/${id}`);
+      if (!res.success) return;
+      
+      const f = res.data;
+      const content = document.getElementById('file-details-content');
+      
+      content.innerHTML = `
+        <div class="flex gap-4 items-center mb-4">
+          ${getFileIconFull(f.mimeType, f.name)}
+          <div>
+            <h3>${escapeHtml(f.name)}</h3>
+            <p class="text-muted">${formatSize(f.size)} • ${f.mimeType}</p>
+          </div>
+        </div>
+        
+        <!-- Tabs -->
+        <div class="tabs mb-4">
+          <button class="tab active" onclick="showFileTab('info', this)">Info</button>
+          <button class="tab" onclick="showFileTab('security', this)">Security</button>
+        </div>
+        
+        <div id="file-tab-info">
+          <div class="grid-2 mb-4">
+            <div class="card" style="margin: 0;">
+              <div class="text-muted">Owner</div>
+              <div>${escapeHtml(f.ownerName || 'Unknown')}</div>
+            </div>
+            <div class="card" style="margin: 0;">
+              <div class="text-muted">Created</div>
+              <div>${new Date(f.createdAt).toLocaleString()}</div>
+            </div>
+            <div class="card" style="margin: 0;">
+              <div class="text-muted">Version</div>
+              <div>v${f.version}</div>
+            </div>
+            <div class="card" style="margin: 0;">
+              <div class="text-muted">Downloads</div>
+              <div>${f.downloadCount}</div>
+            </div>
+          </div>
+          
+          <!-- Encryption Information -->
+          <div class="card mb-4">
+            <div class="text-muted mb-2"><i class="fa-solid fa-lock"></i> Encryption Status</div>
+            ${f.encrypted ? (f.userKeyEncrypted ? `
+              <div style="padding: 12px; background: rgba(234, 179, 8, 0.1); border-left: 3px solid #eab308; border-radius: 4px; margin-bottom: 12px;">
+                <div style="color: #eab308; font-weight: 500; margin-bottom: 8px;"><i class="fa-solid fa-key"></i> Encrypted with YOUR key</div>
+                <div class="text-small">
+                  <div>Method: AES-256-GCM</div>
+                  <div>Key Source: <strong>Your personal encryption key</strong></div>
+                  <div style="margin-top: 8px; padding: 8px; background: rgba(239, 68, 68, 0.1); border-radius: 4px;">
+                    <i class="fa-solid fa-exclamation-triangle" style="color: #ef4444;"></i>
+                    <strong>The server does NOT store your key.</strong> You must use the Decrypt page with your key.
+                  </div>
+                  <div style="margin-top: 8px;">To decrypt this file:</div>
+                  <ol style="margin: 8px 0 8px 20px; font-size: 12px;">
+                    <li>Download the encrypted file below</li>
+                    <li>Go to the <strong>Decrypt File</strong> page</li>
+                    <li>Upload the .enc file and enter your encryption key</li>
+                  </ol>
+                </div>
+              </div>
+              <div class="flex gap-2 flex-wrap">
+                <button class="btn btn-primary" onclick="downloadFileEncrypted('${f.id}')">
+                  <i class="fa-solid fa-download"></i> Download Encrypted File
+                </button>
+                <button class="btn btn-ghost" onclick="showPage('decrypt')">
+                  <i class="fa-solid fa-unlock"></i> Go to Decrypt Page
+                </button>
+              </div>
+            ` : `
+              <div style="padding: 12px; background: rgba(34, 197, 94, 0.1); border-left: 3px solid #22c55e; border-radius: 4px; margin-bottom: 12px;">
+                <div style="color: #22c55e; font-weight: 500; margin-bottom: 8px;"><i class="fa-solid fa-shield-halved"></i> File is encrypted</div>
+                <div class="text-small">
+                  <div>Method: AES-256-GCM</div>
+                  <div>Key Source: Server-managed encryption key</div>
+                  <div>You can download this file in two ways:</div>
+                  <ul style="margin: 8px 0 8px 20px; font-size: 12px;">
+                    <li><strong>Encrypted (.enc)</strong> - Download the encrypted file to keep it secure offline</li>
+                    <li><strong>Decrypted</strong> - Download the original file decrypted by the server</li>
+                  </ul>
+                </div>
+              </div>
+              <div class="flex gap-2 flex-wrap">
+                <button class="btn btn-secondary btn-sm" onclick="downloadFileEncrypted('${f.id}')">
+                  <i class="fa-solid fa-lock"></i> Download Encrypted (.enc)
+                </button>
+                <button class="btn btn-primary btn-sm" onclick="downloadFile('${f.id}')">
+                  <i class="fa-solid fa-unlock"></i> Download Decrypted
+                </button>
+              </div>
+            `) : `
+              <div style="padding: 12px; background: rgba(239, 68, 68, 0.1); border-left: 3px solid #ef4444; border-radius: 4px;">
+                <div style="color: #ef4444; font-weight: 500;"><i class="fa-solid fa-exclamation-triangle"></i> File is not encrypted</div>
+                <div class="text-small text-muted">This file was uploaded without encryption.</div>
+              </div>
+            `}
+          </div>
+          
+          ${f.description ? `<div class="card" style="margin-bottom: 15px;"><div class="text-muted">Description</div><div>${escapeHtml(f.description)}</div></div>` : ''}
+          
+          ${f.tags?.length ? `<div class="mb-4">${f.tags.map(t => `<span class="tag">${escapeHtml(t)}</span>`).join(' ')}</div>` : ''}
+        </div>
+        
+        <div id="file-tab-security" style="display: none;">
+          <div id="file-security-loading" class="text-center text-muted py-4">
+            <i class="fa-solid fa-spinner fa-spin"></i> Loading security info...
+          </div>
+          <div id="file-security-content"></div>
+        </div>
+        
+        <div class="flex gap-2 flex-wrap mt-4">
+          <button class="btn btn-primary" onclick="previewFile('${f.id}', '${escapeHtml(f.name).replace(/'/g, "\\'")}')"><i class="fa-regular fa-eye"></i> Preview</button>
+          <button class="btn btn-success" onclick="downloadFile('${f.id}')"><i class="fa-solid fa-download"></i> Download</button>
+          ${f.isOwner ? `<button class="btn btn-ghost" onclick="openShareModal('${f.id}')"><i class="fa-solid fa-share-nodes"></i> Share</button>` : ''}
+          ${f.isOwner ? `<button class="btn btn-danger" onclick="deleteFile('${f.id}')"><i class="fa-regular fa-trash-can"></i> Delete</button>` : ''}
+        </div>
+      `;
+      
+      // Store file id for security tab
+      content.dataset.fileId = f.id;
+      
+      openModal('file-details-modal');
+    }
+    
+    function showFileTab(tab, btn) {
+      document.querySelectorAll('#file-details-content .tab').forEach(t => t.classList.remove('active'));
+      btn.classList.add('active');
+      
+      document.getElementById('file-tab-info').style.display = tab === 'info' ? 'block' : 'none';
+      document.getElementById('file-tab-security').style.display = tab === 'security' ? 'block' : 'none';
+      
+      if (tab === 'security') {
+        loadFileSecurityInfo(document.getElementById('file-details-content').dataset.fileId);
+      }
+    }
+    
+    async function loadFileSecurityInfo(fileId) {
+      document.getElementById('file-security-loading').style.display = 'block';
+      document.getElementById('file-security-content').innerHTML = '';
+      
+      const res = await api(`/files/${fileId}/security-info`);
+      document.getElementById('file-security-loading').style.display = 'none';
+      
+      if (!res.success) {
+        document.getElementById('file-security-content').innerHTML = `<div class="alert alert-danger">${res.message}</div>`;
+        return;
+      }
+      
+      const s = res.data;
+      const integrityClass = s.integrityValid ? 'success' : 'danger';
+      const integrityIcon = s.integrityValid ? 'fa-shield-check' : 'fa-shield-exclamation';
+      
+      document.getElementById('file-security-content').innerHTML = `
+        <div class="card mb-4" style="background: var(--${s.integrityValid ? 'success' : 'danger'}); padding: 16px; color: white;">
+          <div class="flex items-center gap-3">
+            <i class="fa-solid ${integrityIcon}" style="font-size: 24px;"></i>
+            <div>
+              <strong>Integrity Status: ${s.integrityValid ? 'VERIFIED' : 'FAILED'}</strong>
+              ${s.integrityError ? `<br><small>${escapeHtml(s.integrityError)}</small>` : ''}
+            </div>
+          </div>
+        </div>
+        
+        <h4 class="mb-2">Encryption Details</h4>
+        <div class="grid-2 mb-4">
+          <div class="card" style="margin: 0;">
+            <div class="text-muted">Encrypted</div>
+            <div>${s.encrypted ? '<i class="fa-solid fa-lock" style="color: var(--success);"></i> Yes' : '<i class="fa-solid fa-lock-open" style="color: var(--warning);"></i> No'}</div>
+          </div>
+          ${s.encrypted ? `
+          <div class="card" style="margin: 0;">
+            <div class="text-muted">Encryption Version</div>
+            <div>v${s.encryptionVersion} ${s.upgradeRecommended ? '<span class="badge badge-warning">Upgrade Available</span>' : '<span class="badge badge-success">Current</span>'}</div>
+          </div>
+          <div class="card" style="margin: 0;">
+            <div class="text-muted">Algorithm</div>
+            <div>${s.encryptionAlgorithm || 'N/A'}</div>
+          </div>
+          <div class="card" style="margin: 0;">
+            <div class="text-muted">Key Derivation</div>
+            <div style="font-size: 12px;">${s.keyDerivation || 'N/A'}</div>
+          </div>
+          <div class="card" style="margin: 0;">
+            <div class="text-muted">Integrity Protection</div>
+            <div style="font-size: 12px;">${s.integrityProtection || 'Checksum only'}</div>
+          </div>
+          <div class="card" style="margin: 0;">
+            <div class="text-muted">Encryption Overhead</div>
+            <div>${s.encryptionOverhead ? formatSize(s.encryptionOverhead) : 'N/A'}</div>
+          </div>
+          ` : ''}
+        </div>
+        
+        <h4 class="mb-2">Checksums</h4>
+        <div class="card mb-4" style="font-family: monospace; font-size: 11px; word-break: break-all;">
+          <div class="text-muted">Algorithm: ${s.checksumAlgorithm}</div>
+          <div class="mb-2"><strong>Stored:</strong> ${s.storedChecksum}</div>
+          <div class="${s.currentChecksum === s.storedChecksum ? '' : 'text-danger'}">
+            <strong>Current:</strong> ${s.currentChecksum || 'Unable to compute'}
+          </div>
+        </div>
+        
+        <h4 class="mb-2">Sharing Security</h4>
+        <div class="grid-2 mb-4">
+          <div class="card" style="margin: 0;">
+            <div class="text-muted">Shared With</div>
+            <div>${s.sharedUserCount} users</div>
+          </div>
+          <div class="card" style="margin: 0;">
+            <div class="text-muted">Public Links</div>
+            <div>${s.publicLinkCount} ${s.publicLinkCount > 0 && s.shareLinks.some(l => !l.hasPassword) ? '<i class="fa-solid fa-triangle-exclamation" style="color: var(--warning);" title="Some links have no password"></i>' : ''}</div>
+          </div>
+        </div>
+        
+        ${s.shareLinks.length > 0 ? `
+        <div class="mb-4">
+          ${s.shareLinks.map(l => `
+            <div class="card mb-2" style="padding: 10px;">
+              <div class="flex justify-between items-center">
+                <div>
+                  <i class="fa-solid fa-link"></i>
+                  ${l.hasPassword ? '<span class="badge badge-success">Password</span>' : '<span class="badge badge-warning">No Password</span>'}
+                  ${l.hasExpiration ? (l.isExpired ? '<span class="badge badge-danger">Expired</span>' : '<span class="badge badge-info">Expires ' + new Date(l.expiresAt).toLocaleDateString() + '</span>') : '<span class="badge badge-warning">No Expiry</span>'}
+                </div>
+                <div class="text-muted" style="font-size: 12px;">${l.currentDownloads}${l.maxDownloads ? '/' + l.maxDownloads : ''} downloads</div>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+        ` : ''}
+        
+        <h4 class="mb-2">Version History</h4>
+        <div class="card mb-4">
+          <div class="text-muted">${s.versionCount} version(s) stored</div>
+          ${s.versions.map(v => `<div style="font-size: 12px;">v${v.version} - ${new Date(v.createdAt).toLocaleString()}</div>`).join('')}
+        </div>
+        
+        <h4 class="mb-2">Verification</h4>
+        <div class="text-muted mb-2" style="font-size: 12px;">
+          Last verified: ${s.integrityVerifiedAt ? new Date(s.integrityVerifiedAt).toLocaleString() : 'Never'}
+        </div>
+        
+        <div class="flex gap-2 flex-wrap">
+          <button class="btn btn-primary" onclick="verifyFileIntegrity('${fileId}')">
+            <i class="fa-solid fa-shield-check"></i> Verify Integrity
+          </button>
+          ${s.encrypted ? `
+          <button class="btn btn-ghost" onclick="verifyFileHmac('${fileId}')">
+            <i class="fa-solid fa-fingerprint"></i> Verify HMAC
+          </button>
+          ${s.upgradeRecommended ? `
+          <button class="btn btn-warning" onclick="upgradeFileEncryption('${fileId}')">
+            <i class="fa-solid fa-arrow-up"></i> Upgrade Encryption
+          </button>
+          ` : ''}
+          ` : ''}
+        </div>
+      `;
+    }
+    
+    async function verifyFileIntegrity(fileId) {
+      toast('Verifying file integrity...', 'info');
+      const res = await api(`/files/${fileId}/verify-integrity`, 'POST');
+      if (res.success) {
+        if (res.data.valid) {
+          toast('File integrity verified successfully', 'success');
+        } else {
+          toast('File integrity check FAILED - file may be corrupted', 'error');
+        }
+        loadFileSecurityInfo(fileId);
+      } else {
+        toast(res.message, 'error');
+      }
+    }
+    
+    async function verifyFileHmac(fileId) {
+      toast('Verifying HMAC...', 'info');
+      const res = await api(`/files/${fileId}/verify-hmac`, 'POST');
+      if (res.success) {
+        if (res.data.hmacVerified) {
+          toast('HMAC verification passed - file is authentic', 'success');
+        } else if (res.data.upgradeRecommended) {
+          toast(res.data.reason, 'warning');
+        } else {
+          toast('HMAC verification FAILED - file may have been tampered with', 'error');
+        }
+      } else {
+        toast(res.message, 'error');
+      }
+    }
+    
+    async function upgradeFileEncryption(fileId) {
+      if (!confirm('This will upgrade the file encryption to the latest version. Continue?')) return;
+      
+      toast('Upgrading encryption...', 'info');
+      const res = await api(`/files/${fileId}/upgrade-encryption`, 'POST');
+      if (res.success) {
+        if (res.data.upgraded) {
+          toast(`Encryption upgraded from v${res.data.previousVersion} to v${res.data.newVersion}`, 'success');
+        } else {
+          toast(res.data.message, 'info');
+        }
+        loadFileSecurityInfo(fileId);
+      } else {
+        toast(res.message, 'error');
+      }
+    }
+
+    // ============ PDF VIEWER STATE ============
+    let pdfDoc = null;
+    let pdfCurrentPage = 1;
+    let pdfZoom = 1;
+    let pdfBlobUrl = null;
+
+    function closePreviewModal() {
+      // Clean up PDF resources
+      if (pdfDoc) {
+        pdfDoc.destroy();
+        pdfDoc = null;
+      }
+      if (pdfBlobUrl) {
+        URL.revokeObjectURL(pdfBlobUrl);
+        pdfBlobUrl = null;
+      }
+      pdfCurrentPage = 1;
+      pdfZoom = 1;
+      
+      // Reset modal size
+      document.getElementById('preview-modal-content').style.maxWidth = '800px';
+      closeModal('preview-modal');
+    }
+
+    async function previewFile(id, filename = 'Preview') {
+      const res = await api(`/files/${id}/preview`);
+      if (!res.success) {
+        toast(res.message, 'error');
+        return;
+      }
+      
+      document.getElementById('preview-title').textContent = filename;
+      const content = document.getElementById('preview-content');
+      const modalContent = document.getElementById('preview-modal-content');
+      document.getElementById('preview-download-btn').onclick = () => downloadFile(id);
+      
+      if (res.data.type === 'text') {
+        modalContent.style.maxWidth = '800px';
+        content.innerHTML = `<pre class="preview-text">${escapeHtml(res.data.content)}</pre>`;
+      } else if (res.data.type === 'video') {
+        modalContent.style.maxWidth = '900px';
+        content.innerHTML = `
+          <video controls autoplay style="max-width: 100%; max-height: 70vh; border-radius: var(--radius-sm);">
+            <source src="data:${res.data.mimeType};base64,${res.data.content}" type="${res.data.mimeType}">
+            Your browser does not support video playback.
+          </video>
+        `;
+      } else if (res.data.type === 'audio') {
+        modalContent.style.maxWidth = '500px';
+        content.innerHTML = `
+          <div style="padding: 40px; text-align: center;">
+            <div style="font-size: 64px; margin-bottom: 20px;"><i class="fa-solid fa-music"></i></div>
+            <audio controls autoplay style="width: 100%;">
+              <source src="data:${res.data.mimeType};base64,${res.data.content}" type="${res.data.mimeType}">
+              Your browser does not support audio playback.
+            </audio>
+          </div>
+        `;
+      } else if (res.data.mimeType === 'application/pdf') {
+        // Expand modal for PDF
+        modalContent.style.maxWidth = '95vw';
+        await renderPDFViewer(res.data.content, content);
+      } else {
+        modalContent.style.maxWidth = '800px';
+        content.innerHTML = `<img src="data:${res.data.mimeType};base64,${res.data.content}" class="preview-image">`;
+      }
+      
+      openModal('preview-modal');
+    }
+
+    async function renderPDFViewer(base64Content, container) {
+      // Show loading state
+      container.innerHTML = `
+        <div class="pdf-viewer-container">
+          <div class="pdf-loading">
+            <div class="pdf-loading-spinner"></div>
+            <div>Loading PDF...</div>
+          </div>
+        </div>
+      `;
+
+      try {
+        // Convert base64 to Uint8Array
+        const byteCharacters = atob(base64Content);
+        const byteNumbers = new Array(byteCharacters.length);
+        for (let i = 0; i < byteCharacters.length; i++) {
+          byteNumbers[i] = byteCharacters.charCodeAt(i);
+        }
+        const byteArray = new Uint8Array(byteNumbers);
+        
+        // Create blob URL for fallback
+        const blob = new Blob([byteArray], { type: 'application/pdf' });
+        pdfBlobUrl = URL.createObjectURL(blob);
+
+        // Check if PDF.js is available
+        if (typeof pdfjsLib === 'undefined' || typeof window.pdfjsLib === 'undefined') {
+          // PDF.js not loaded, use iframe fallback
+          console.warn('PDF.js not loaded, using iframe fallback');
+          container.innerHTML = `
+            <div class="pdf-viewer-container" style="display: flex; flex-direction: column; height: 600px;">
+              <div style="padding: 10px; background: var(--bg-tertiary); display: flex; justify-content: flex-end; gap: 10px;">
+                <a href="${pdfBlobUrl}" download class="btn btn-primary"><i class="fas fa-download"></i> Download PDF</a>
+                <a href="${pdfBlobUrl}" target="_blank" class="btn btn-ghost"><i class="fas fa-external-link-alt"></i> Open in New Tab</a>
+              </div>
+              <iframe src="${pdfBlobUrl}" style="flex: 1; border: none; width: 100%;" title="PDF Preview"></iframe>
+            </div>
+          `;
+          return;
+        }
+
+        // Initialize PDF.js
+        const pdfLib = window.pdfjsLib || pdfjsLib;
+        pdfLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        
+        pdfDoc = await pdfLib.getDocument({ data: byteArray }).promise;
+        const totalPages = pdfDoc.numPages;
+        pdfCurrentPage = 1;
+        pdfZoom = 1;
+
+        // Render the viewer UI
+        container.innerHTML = `
+          <div class="pdf-viewer-container">
+            <div class="pdf-toolbar">
+              <div class="pdf-toolbar-group">
+                <button onclick="pdfToggleThumbnails()" title="Toggle Thumbnails"><i class="fa-regular fa-images"></i></button>
+                <button onclick="pdfFirstPage()" title="First Page"><i class="fa-solid fa-backward-fast"></i></button>
+                <button onclick="pdfPrevPage()" id="pdf-prev-btn" title="Previous Page"><i class="fa-solid fa-backward"></i></button>
+                <div class="pdf-page-info">
+                  <input type="number" class="pdf-page-input" id="pdf-page-input" value="1" min="1" max="${totalPages}" onchange="pdfGoToPage(this.value)">
+                  <span>/ ${totalPages}</span>
+                </div>
+                <button onclick="pdfNextPage()" id="pdf-next-btn" title="Next Page"><i class="fa-solid fa-forward"></i></button>
+                <button onclick="pdfLastPage()" title="Last Page"><i class="fa-solid fa-forward-fast"></i></button>
+              </div>
+              <div class="pdf-toolbar-group">
+                <button onclick="pdfZoomOut()" title="Zoom Out"><i class="fa-solid fa-minus"></i></button>
+                <select class="pdf-zoom-select" id="pdf-zoom-select" onchange="pdfSetZoom(this.value)">
+                  <option value="0.5">50%</option>
+                  <option value="0.75">75%</option>
+                  <option value="1" selected>100%</option>
+                  <option value="1.25">125%</option>
+                  <option value="1.5">150%</option>
+                  <option value="2">200%</option>
+                  <option value="fit-width">Fit Width</option>
+                  <option value="fit-page">Fit Page</option>
+                </select>
+                <button onclick="pdfZoomIn()" title="Zoom In"><i class="fa-solid fa-plus"></i></button>
+              </div>
+              <div class="pdf-toolbar-group">
+                <button onclick="pdfRotate()" title="Rotate"><i class="fa-solid fa-rotate-right"></i></button>
+                <button onclick="pdfFullscreen()" title="Fullscreen"><i class="fa-solid fa-expand"></i></button>
+                <a href="${pdfBlobUrl}" target="_blank" class="btn btn-ghost btn-sm" style="text-decoration:none; padding: 6px 12px;"><i class="fa-solid fa-arrow-up-right-from-square"></i> Open</a>
+              </div>
+            </div>
+            <div class="pdf-main-area">
+              <div class="pdf-thumbnails" id="pdf-thumbnails" style="display: none;"></div>
+              <div class="pdf-canvas-container" id="pdf-canvas-container">
+                <div class="pdf-canvas-wrapper">
+                  <canvas id="pdf-canvas" class="pdf-canvas"></canvas>
+                </div>
+              </div>
+            </div>
+          </div>
+        `;
+
+        // Render first page
+        await pdfRenderPage(pdfCurrentPage);
+        pdfUpdateNavButtons();
+
+      } catch (error) {
+        console.error('PDF loading error:', error);
+        container.innerHTML = `
+          <div class="pdf-viewer-container">
+            <div class="pdf-error">
+              <div style="font-size: 48px;"><i class="fa-regular fa-file-pdf"></i></div>
+              <div>Unable to render PDF preview</div>
+              <div style="color: var(--text-muted); font-size: 13px;">${error.message || 'Unknown error'}</div>
+              <div style="margin-top: 15px;">
+                <a href="${pdfBlobUrl}" target="_blank" class="btn btn-primary">Open in New Tab</a>
+              </div>
+            </div>
+          </div>
+        `;
+      }
+    }
+
+    let pdfRotation = 0;
+
+    async function pdfRenderPage(pageNum) {
+      if (!pdfDoc) return;
+      
+      const page = await pdfDoc.getPage(pageNum);
+      const canvas = document.getElementById('pdf-canvas');
+      const ctx = canvas.getContext('2d');
+      const container = document.getElementById('pdf-canvas-container');
+
+      let scale = pdfZoom;
+      
+      // Handle fit modes
+      if (pdfZoom === 'fit-width' || pdfZoom === 'fit-page') {
+        const viewport = page.getViewport({ scale: 1, rotation: pdfRotation });
+        const containerWidth = container.clientWidth - 40;
+        const containerHeight = container.clientHeight - 40;
+        
+        if (pdfZoom === 'fit-width') {
+          scale = containerWidth / viewport.width;
+        } else {
+          const scaleX = containerWidth / viewport.width;
+          const scaleY = containerHeight / viewport.height;
+          scale = Math.min(scaleX, scaleY);
+        }
+      }
+
+      const viewport = page.getViewport({ scale: scale, rotation: pdfRotation });
+      
+      canvas.height = viewport.height;
+      canvas.width = viewport.width;
+
+      await page.render({
+        canvasContext: ctx,
+        viewport: viewport
+      }).promise;
+
+      // Update page input
+      document.getElementById('pdf-page-input').value = pageNum;
+      pdfCurrentPage = pageNum;
+      pdfUpdateNavButtons();
+
+      // Update active thumbnail
+      document.querySelectorAll('.pdf-thumbnail').forEach((thumb, idx) => {
+        thumb.classList.toggle('active', idx + 1 === pageNum);
+      });
+    }
+
+    function pdfUpdateNavButtons() {
+      const prevBtn = document.getElementById('pdf-prev-btn');
+      const nextBtn = document.getElementById('pdf-next-btn');
+      if (prevBtn) prevBtn.disabled = pdfCurrentPage <= 1;
+      if (nextBtn) nextBtn.disabled = pdfCurrentPage >= pdfDoc.numPages;
+    }
+
+    function pdfPrevPage() {
+      if (pdfCurrentPage > 1) {
+        pdfRenderPage(pdfCurrentPage - 1);
+      }
+    }
+
+    function pdfNextPage() {
+      if (pdfDoc && pdfCurrentPage < pdfDoc.numPages) {
+        pdfRenderPage(pdfCurrentPage + 1);
+      }
+    }
+
+    function pdfFirstPage() {
+      pdfRenderPage(1);
+    }
+
+    function pdfLastPage() {
+      if (pdfDoc) {
+        pdfRenderPage(pdfDoc.numPages);
+      }
+    }
+
+    function pdfGoToPage(pageNum) {
+      const num = parseInt(pageNum);
+      if (pdfDoc && num >= 1 && num <= pdfDoc.numPages) {
+        pdfRenderPage(num);
+      }
+    }
+
+    function pdfZoomIn() {
+      const zoomLevels = [0.5, 0.75, 1, 1.25, 1.5, 2];
+      const currentIdx = zoomLevels.indexOf(pdfZoom);
+      if (currentIdx < zoomLevels.length - 1) {
+        pdfZoom = zoomLevels[currentIdx + 1];
+      } else if (typeof pdfZoom === 'string') {
+        pdfZoom = 1.25;
+      } else {
+        pdfZoom = Math.min(pdfZoom + 0.25, 3);
+      }
+      document.getElementById('pdf-zoom-select').value = pdfZoom;
+      pdfRenderPage(pdfCurrentPage);
+    }
+
+    function pdfZoomOut() {
+      const zoomLevels = [0.5, 0.75, 1, 1.25, 1.5, 2];
+      const currentIdx = zoomLevels.indexOf(pdfZoom);
+      if (currentIdx > 0) {
+        pdfZoom = zoomLevels[currentIdx - 1];
+      } else if (typeof pdfZoom === 'string') {
+        pdfZoom = 0.75;
+      } else {
+        pdfZoom = Math.max(pdfZoom - 0.25, 0.25);
+      }
+      document.getElementById('pdf-zoom-select').value = pdfZoom;
+      pdfRenderPage(pdfCurrentPage);
+    }
+
+    function pdfSetZoom(value) {
+      if (value === 'fit-width' || value === 'fit-page') {
+        pdfZoom = value;
+      } else {
+        pdfZoom = parseFloat(value);
+      }
+      pdfRenderPage(pdfCurrentPage);
+    }
+
+    function pdfRotate() {
+      pdfRotation = (pdfRotation + 90) % 360;
+      pdfRenderPage(pdfCurrentPage);
+    }
+
+    function pdfFullscreen() {
+      const container = document.querySelector('.pdf-viewer-container');
+      if (container) {
+        if (document.fullscreenElement) {
+          document.exitFullscreen();
+        } else {
+          container.requestFullscreen();
+        }
+      }
+    }
+
+    async function pdfToggleThumbnails() {
+      const thumbnailsPanel = document.getElementById('pdf-thumbnails');
+      if (!thumbnailsPanel) return;
+
+      const isVisible = thumbnailsPanel.style.display !== 'none';
+      thumbnailsPanel.style.display = isVisible ? 'none' : 'flex';
+
+      // Generate thumbnails if not already done
+      if (!isVisible && thumbnailsPanel.children.length === 0 && pdfDoc) {
+        for (let i = 1; i <= pdfDoc.numPages; i++) {
+          const page = await pdfDoc.getPage(i);
+          const viewport = page.getViewport({ scale: 0.2 });
+          
+          const thumbDiv = document.createElement('div');
+          thumbDiv.className = 'pdf-thumbnail' + (i === pdfCurrentPage ? ' active' : '');
+          thumbDiv.onclick = () => pdfRenderPage(i);
+          
+          const canvas = document.createElement('canvas');
+          canvas.width = viewport.width;
+          canvas.height = viewport.height;
+          
+          await page.render({
+            canvasContext: canvas.getContext('2d'),
+            viewport: viewport
+          }).promise;
+          
+          const label = document.createElement('div');
+          label.className = 'pdf-thumbnail-label';
+          label.textContent = `Page ${i}`;
+          
+          thumbDiv.appendChild(canvas);
+          thumbDiv.appendChild(label);
+          thumbnailsPanel.appendChild(thumbDiv);
+        }
+      }
+    }
+
+    async function downloadFile(id, file = null) {
+      // If file info provided and it's user-key encrypted, show a message
+      if (file && file.userKeyEncrypted) {
+        toast('This file is encrypted with your personal key. Download the encrypted file and use the Decrypt page.', 'info');
+        return downloadFileEncrypted(id);
+      }
+      
+      const res = await fetch(`${API}/files/${id}/download-decrypted`, { 
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        if (errorData.message?.includes('user-provided key')) {
+          toast('This file requires your encryption key. Use the Decrypt File page.', 'info');
+          // Redirect to download encrypted instead
+          return downloadFileEncrypted(id);
+        }
+        toast('Download failed', 'error');
+        return;
+      }
+      
+      const blob = await res.blob();
+      const disposition = res.headers.get('Content-Disposition');
+      const filename = disposition?.match(/filename="(.+)"/)?.[1] || 'download';
+      
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = decodeURIComponent(filename);
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    async function downloadFileEncrypted(id) {
+      const res = await fetch(`${API}/files/${id}/download`, { 
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      
+      if (!res.ok) {
+        toast('Download failed', 'error');
+        return;
+      }
+      
+      const blob = await res.blob();
+      const disposition = res.headers.get('Content-Disposition');
+      const filename = disposition?.match(/filename="(.+)"/)?.[1] || 'download.enc';
+      
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = decodeURIComponent(filename);
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    async function deleteFile(id) {
+      if (!confirm('Move this file to trash?')) return;
+      const res = await api(`/files/${id}`, 'DELETE');
+      if (res.success) {
+        toast('File moved to trash', 'success');
+        closeModal('file-details-modal');
+        loadFiles();
+      } else {
+        toast(res.message, 'error');
+      }
+    }
+
+    async function openShareModal(id) {
+      const res = await api(`/files/${id}`);
+      if (!res.success) return;
+      
+      const f = res.data;
+      const content = document.getElementById('share-content');
+      
+      content.innerHTML = `
+        <h3 class="mb-4"><i class="fa-solid fa-share-from-square"></i> Share "${escapeHtml(f.name)}"</h3>
+        
+        <div class="form-group">
+          <label>Share with users (email)</label>
+          <div class="flex gap-2">
+            <input type="email" id="share-email" class="form-input flex-1" placeholder="user@example.com">
+            <button class="btn btn-primary" onclick="shareWithEmail('${id}')">Add</button>
+          </div>
+        </div>
+        
+        ${f.sharedUsers?.length ? `
+          <div class="mb-4">
+            <div class="text-muted mb-2">Shared with:</div>
+            ${f.sharedUsers.map(u => `
+              <div class="flex items-center justify-between" style="padding: 8px 0; border-bottom: 1px solid var(--border);">
+                <span>${escapeHtml(u.username)}</span>
+                <button class="btn btn-ghost btn-sm" onclick="unshareUser('${id}', '${u.id}')"><i class="fa-solid fa-xmark"></i></button>
+              </div>
+            `).join('')}
+          </div>
+        ` : ''}
+        
+        <hr style="border-color: var(--border); margin: 20px 0;">
+        
+        <h4 class="mb-2"><i class="fa-solid fa-link"></i> Share Links</h4>
+        <button class="btn btn-ghost mb-4" onclick="createShareLink('${id}')">+ Create Share Link</button>
+        
+        ${f.shareLinks?.length ? f.shareLinks.map(l => `
+          <div class="card" style="margin-bottom: 10px;">
+            <div class="flex items-center justify-between">
+              <div>
+                <div class="text-muted">Downloads: ${l.downloadCount}${l.maxDownloads ? ` / ${l.maxDownloads}` : ''}</div>
+                ${l.expiresAt ? `<div class="text-muted">Expires: ${new Date(l.expiresAt).toLocaleDateString()}</div>` : ''}
+                ${l.hasPassword ? '<div class="text-muted"><i class="fa-solid fa-lock"></i> Password protected</div>' : ''}
+              </div>
+              <button class="btn btn-danger btn-sm" onclick="deleteShareLink('${l.id}')">Delete</button>
+            </div>
+          </div>
+        `).join('') : '<p class="text-muted">No share links created</p>'}
+      `;
+      
+      // Sharing removed
+    }
+
+    // ============ UPLOAD ============
+    function openUploadModal() {
+      openModal('upload-modal');
+    }
+
+    const dropZone = document.getElementById('drop-zone');
+    const fileInput = document.getElementById('file-input');
+
+    // Toggle user key section based on encrypt checkbox
+    const encryptFileCheckbox = document.getElementById('encrypt-file');
+    const userKeySection = document.getElementById('user-key-section');
+    
+    // Initialize visibility on page load
+    userKeySection.style.display = encryptFileCheckbox.checked ? 'block' : 'none';
+    
+    encryptFileCheckbox.addEventListener('change', function() {
+      userKeySection.style.display = this.checked ? 'block' : 'none';
+      if (!this.checked) {
+        document.getElementById('use-user-key').checked = false;
+        document.getElementById('user-key-input-section').style.display = 'none';
+      }
+    });
+
+    // Toggle user key input based on use-user-key checkbox
+    document.getElementById('use-user-key').addEventListener('change', function() {
+      document.getElementById('user-key-input-section').style.display = this.checked ? 'block' : 'none';
+      if (!this.checked) {
+        document.getElementById('upload-encryption-key').value = '';
+      }
+    });
+
+    // Toggle upload key visibility
+    function toggleUploadKeyVisibility() {
+      const keyInput = document.getElementById('upload-encryption-key');
+      const eyeIcon = document.getElementById('upload-key-eye');
+      if (keyInput.type === 'password') {
+        keyInput.type = 'text';
+        eyeIcon.classList.remove('fa-eye');
+        eyeIcon.classList.add('fa-eye-slash');
+      } else {
+        keyInput.type = 'password';
+        eyeIcon.classList.remove('fa-eye-slash');
+        eyeIcon.classList.add('fa-eye');
+      }
+    }
+
+    // Upload key strength indicator
+    document.getElementById('upload-encryption-key').addEventListener('input', function() {
+      const key = this.value;
+      const strengthEl = document.getElementById('upload-key-strength');
+      const barEl = document.getElementById('upload-key-strength-bar');
+      
+      let strength = 0;
+      if (key.length >= 8) strength += 25;
+      if (key.length >= 12) strength += 25;
+      if (/[A-Z]/.test(key) && /[a-z]/.test(key)) strength += 15;
+      if (/[0-9]/.test(key)) strength += 15;
+      if (/[^A-Za-z0-9]/.test(key)) strength += 20;
+      
+      if (strength <= 25) {
+        strengthEl.textContent = 'Weak';
+        strengthEl.style.color = '#ef4444';
+        barEl.style.width = '25%';
+        barEl.style.background = '#ef4444';
+      } else if (strength <= 50) {
+        strengthEl.textContent = 'Fair';
+        strengthEl.style.color = '#f97316';
+        barEl.style.width = '50%';
+        barEl.style.background = '#f97316';
+      } else if (strength <= 75) {
+        strengthEl.textContent = 'Good';
+        strengthEl.style.color = '#eab308';
+        barEl.style.width = '75%';
+        barEl.style.background = '#eab308';
+      } else {
+        strengthEl.textContent = 'Strong';
+        strengthEl.style.color = '#22c55e';
+        barEl.style.width = '100%';
+        barEl.style.background = '#22c55e';
+      }
+    });
+
+    dropZone.onclick = () => fileInput.click();
+    
+    dropZone.ondragover = (e) => { e.preventDefault(); dropZone.classList.add('dragover'); };
+    dropZone.ondragleave = () => dropZone.classList.remove('dragover');
+    dropZone.ondrop = (e) => {
+      e.preventDefault();
+      dropZone.classList.remove('dragover');
+      if (e.dataTransfer.files.length) {
+        fileInput.files = e.dataTransfer.files;
+        document.getElementById('file-name-display').textContent = e.dataTransfer.files[0].name;
+      }
+    };
+
+    fileInput.onchange = () => {
+      if (fileInput.files.length) {
+        document.getElementById('file-name-display').textContent = fileInput.files[0].name;
+      }
+    };
+
+    document.getElementById('upload-form').onsubmit = async (e) => {
+      e.preventDefault();
+      const file = fileInput.files[0];
+      if (!file) {
+        toast('Please select a file', 'error');
+        return;
+      }
+
+      const useUserKey = document.getElementById('use-user-key').checked;
+      const encryptionKey = document.getElementById('upload-encryption-key').value.trim();
+      
+      // Validate user key if using custom encryption
+      if (useUserKey) {
+        if (!encryptionKey || encryptionKey.length < 8) {
+          toast('Encryption key must be at least 8 characters', 'error');
+          return;
+        }
+      }
+      
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('encrypt', document.getElementById('encrypt-file').checked);
+      formData.append('description', document.getElementById('file-description').value);
+      formData.append('tags', JSON.stringify(document.getElementById('file-tags').value.split(',').map(t => t.trim()).filter(Boolean)));
+      
+      // Add user key if using custom encryption
+      if (useUserKey && encryptionKey) {
+        formData.append('userEncryptionKey', encryptionKey);
+      }
+      
+      const res = await apiForm('/files/upload', formData);
+      if (res.success) {
+        closeModal('upload-modal');
+        document.getElementById('upload-form').reset();
+        document.getElementById('file-name-display').textContent = 'No file selected';
+        document.getElementById('user-key-section').style.display = 'none';
+        document.getElementById('user-key-input-section').style.display = 'none';
+        loadFiles();
+        loadDashboard();
+        
+        // If user-key was used, show the key reminder modal
+        if (useUserKey && encryptionKey) {
+          showUploadKeyModal(res.data.name, encryptionKey);
+        } else {
+          toast('File uploaded successfully!', 'success');
+        }
+      } else {
+        toast(res.message, 'error');
+      }
+    };
+
+    // Show encryption key modal after user-key upload
+    function showUploadKeyModal(fileName, encryptionKey) {
+      const modal = document.getElementById('encryption-key-modal');
+      const keyInput = document.getElementById('modal-encryption-key');
+      
+      // Update modal title and content for upload success
+      modal.querySelector('.modal-header h2').innerHTML = '<i class="fas fa-check-circle" style="color: var(--success);"></i> File Uploaded Successfully';
+      modal.querySelector('.modal-body > p').innerHTML = `
+        Your file <strong>${escapeHtml(fileName)}</strong> has been encrypted with your custom key.<br>
+        <strong style="color: var(--danger);">Save this key now - it will NOT be shown again!</strong>
+      `;
+      
+      keyInput.value = encryptionKey;
+      
+      // Hide the create button, show a close button instead
+      const createBtn = document.getElementById('create-test-file-btn');
+      createBtn.style.display = 'none';
+      
+      // Add a done button if not exists
+      let doneBtn = modal.querySelector('#upload-done-btn');
+      if (!doneBtn) {
+        doneBtn = document.createElement('button');
+        doneBtn.id = 'upload-done-btn';
+        doneBtn.className = 'btn btn-primary';
+        doneBtn.innerHTML = '<i class="fas fa-check"></i> I\'ve Saved My Key';
+        doneBtn.onclick = () => {
+          closeModal('encryption-key-modal');
+          createBtn.style.display = '';
+          toast('File uploaded successfully! Remember your encryption key.', 'success');
+        };
+        createBtn.parentNode.appendChild(doneBtn);
+      } else {
+        doneBtn.style.display = '';
+      }
+      
+      openModal('encryption-key-modal');
+    }
+
+    // ============ USERS (Admin) ============
+    async function loadUsers() {
+      const search = document.getElementById('user-search')?.value || '';
+      const res = await api(`/users?search=${search}`);
+      if (!res.success) return;
+      
+      document.getElementById('users-table').innerHTML = res.data.map(u => `
+        <tr>
+          <td>
+            <div class="flex items-center gap-2">
+              <div class="user-avatar" style="width: 32px; height: 32px; font-size: 14px;">${u.username.charAt(0).toUpperCase()}</div>
+              ${escapeHtml(u.username)}
+            </div>
+          </td>
+          <td>${escapeHtml(u.email)}</td>
+          <td><span class="role-badge ${u.role}">${u.role}</span></td>
+          <td>${formatSize(u.storageUsed)} / ${formatSize(u.storageQuota)}</td>
+          <td>${new Date(u.createdAt).toLocaleDateString()}</td>
+          <td>
+            <select onchange="updateUserRole('${u.id}', this.value)" ${u.id === user.id ? 'disabled' : ''}>
+              <option value="viewer" ${u.role === 'viewer' ? 'selected' : ''}>Viewer</option>
+              <option value="editor" ${u.role === 'editor' ? 'selected' : ''}>Editor</option>
+              <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>Admin</option>
+            </select>
+            ${u.id !== user.id ? `<button class="btn btn-danger btn-sm" onclick="deleteUser('${u.id}')">Delete</button>` : ''}
+          </td>
+        </tr>
+      `).join('');
+    }
+
+    function debounceUserSearch() {
+      clearTimeout(searchTimeout);
+      searchTimeout = setTimeout(loadUsers, 300);
+    }
+
+    async function updateUserRole(userId, role) {
+      const res = await api(`/users/${userId}/role`, 'PATCH', { role });
+      if (res.success) {
+        toast('Role updated', 'success');
+      } else {
+        toast(res.message, 'error');
+        loadUsers();
+      }
+    }
+
+    async function deleteUser(userId) {
+      if (!confirm('Delete this user and all their files?')) return;
+      const res = await api(`/users/${userId}`, 'DELETE');
+      if (res.success) {
+        toast('User deleted', 'success');
+        loadUsers();
+      }
+    }
+
+    // ============ AUDIT (Admin) ============
+    async function loadAudit() {
+      const res = await api('/audit?limit=100');
+      if (!res.success) return;
+      
+      document.getElementById('audit-list').innerHTML = res.data.map(l => `
+        <div class="activity-item">
+          <div class="activity-icon">${getActionIcon(l.action)}</div>
+          <div class="activity-content">
+            <div class="text"><strong>${escapeHtml(l.username || 'Unknown')}</strong> - ${l.action.replace(/_/g, ' ')}</div>
+            <div class="time">${new Date(l.timestamp).toLocaleString()} ${l.ipAddress ? `• ${l.ipAddress}` : ''}</div>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    // ============ SYSTEM (Admin) ============
+    async function loadSystemStats() {
+      const res = await api('/system/stats');
+      if (!res.success) return;
+      
+      const s = res.data;
+      document.getElementById('system-stats').innerHTML = `
+        <div class="stat-card blue"><div class="icon"><i class="fa-solid fa-users"></i></div><div class="value">${s.totalUsers}</div><div class="label">Total Users</div></div>
+        <div class="stat-card green"><div class="icon"><i class="fa-regular fa-folder"></i></div><div class="value">${s.totalFiles}</div><div class="label">Active Files</div></div>
+        <div class="stat-card yellow"><div class="icon"><i class="fa-regular fa-trash-can"></i></div><div class="value">${s.trashedFiles}</div><div class="label">Trashed Files</div></div>
+        <div class="stat-card blue"><div class="icon"><i class="fa-solid fa-hard-drive"></i></div><div class="value">${formatSize(s.totalStorage)}</div><div class="label">Total Storage</div></div>
+        <div class="stat-card green"><div class="icon"><i class="fa-solid fa-lock"></i></div><div class="value">${s.encryptedFiles}</div><div class="label">Encrypted Files</div></div>
+        <div class="stat-card yellow"><div class="icon"><i class="fa-solid fa-download"></i></div><div class="value">${s.totalDownloads}</div><div class="label">Total Downloads</div></div>
+        <div class="stat-card blue"><div class="icon"><i class="fa-solid fa-key"></i></div><div class="value">${s.activeSessions}</div><div class="label">Active Sessions</div></div>
+      `;
+    }
+
+    // ============ SECURITY DASHBOARD ============
+    async function loadSecurityDashboard() {
+      const res = await api('/security/dashboard');
+      if (!res.success) return;
+      
+      const d = res.data;
+      
+      // Security score with color coding
+      const scoreEl = document.getElementById('security-score');
+      const scoreCard = document.getElementById('security-score-card');
+      scoreEl.textContent = d.securityScore;
+      scoreCard.className = 'stat-card ' + (d.securityScore >= 80 ? 'green' : d.securityScore >= 50 ? 'yellow' : 'red');
+      
+      // 2FA status
+      document.getElementById('security-2fa').innerHTML = d.twoFactorEnabled 
+        ? '<i class="fa-solid fa-check" style="color: var(--success);"></i> Enabled'
+        : '<i class="fa-solid fa-xmark" style="color: var(--danger);"></i> Disabled';
+      
+      // Password age
+      document.getElementById('security-password-age').textContent = d.passwordAge !== null ? d.passwordAge : 'Unknown';
+      
+      // Active sessions
+      document.getElementById('security-sessions').textContent = d.activeSessions;
+      
+      // Files needing verification
+      document.getElementById('files-needing-verification').textContent = `${d.filesNeedingVerification} files need verification`;
+      
+      // Security alerts
+      const alertsHtml = [];
+      if (d.failedLoginsLast24h > 0) {
+        alertsHtml.push(`<div class="alert alert-warning"><i class="fa-solid fa-triangle-exclamation"></i> ${d.failedLoginsLast24h} failed login attempts in the last 24 hours</div>`);
+      }
+      if (d.suspiciousActivityCount > 0) {
+        alertsHtml.push(`<div class="alert alert-danger"><i class="fa-solid fa-bug"></i> ${d.suspiciousActivityCount} suspicious activity events detected</div>`);
+      }
+      if (!d.twoFactorEnabled) {
+        alertsHtml.push(`<div class="alert alert-info"><i class="fa-solid fa-shield"></i> Enable Two-Factor Authentication for better security</div>`);
+      }
+      if (d.passwordAge && d.passwordAge > 90) {
+        alertsHtml.push(`<div class="alert alert-warning"><i class="fa-solid fa-key"></i> Your password is ${d.passwordAge} days old. Consider changing it.</div>`);
+      }
+      if (d.filesNeedingVerification > 0) {
+        alertsHtml.push(`<div class="alert alert-info"><i class="fa-solid fa-file-shield"></i> ${d.filesNeedingVerification} files haven't been verified in 7+ days</div>`);
+      }
+      document.getElementById('security-alerts').innerHTML = alertsHtml.length ? alertsHtml.join('') : '<p class="text-muted">No security alerts</p>';
+      
+      // Load sessions
+      loadUserSessions();
+      
+      // Security events
+      const eventsRes = await api('/security/events?limit=20');
+      if (eventsRes.success) {
+        document.getElementById('security-events-list').innerHTML = eventsRes.data.length ? eventsRes.data.map(e => `
+          <div class="activity-item">
+            <div class="activity-icon ${getSecurityEventClass(e.eventType)}">${getSecurityEventIcon(e.eventType)}</div>
+            <div class="activity-content">
+              <div class="text"><strong>${e.eventType.replace(/_/g, ' ')}</strong> - ${escapeHtml(e.description)}</div>
+              <div class="time">${new Date(e.timestamp).toLocaleString()} ${e.ipAddress ? `• ${e.ipAddress}` : ''}</div>
+            </div>
+          </div>
+        `).join('') : '<p class="text-muted">No recent security events</p>';
+      }
+    }
+    
+    function getSecurityEventIcon(eventType) {
+      const icons = {
+        'login_success': '<i class="fa-solid fa-right-to-bracket"></i>',
+        'login_failed': '<i class="fa-solid fa-xmark"></i>',
+        'logout': '<i class="fa-solid fa-right-from-bracket"></i>',
+        'password_change': '<i class="fa-solid fa-key"></i>',
+        'account_locked': '<i class="fa-solid fa-lock"></i>',
+        'suspicious_activity': '<i class="fa-solid fa-bug"></i>',
+        'file_integrity_fail': '<i class="fa-solid fa-file-circle-exclamation"></i>',
+        'unauthorized_access': '<i class="fa-solid fa-ban"></i>',
+        'two_factor_enabled': '<i class="fa-solid fa-shield-check"></i>',
+        'encryption_key_rotated': '<i class="fa-solid fa-rotate"></i>',
+      };
+      return icons[eventType] || '<i class="fa-solid fa-circle-info"></i>';
+    }
+    
+    function getSecurityEventClass(eventType) {
+      const classes = {
+        'login_success': 'success',
+        'login_failed': 'danger',
+        'account_locked': 'danger',
+        'suspicious_activity': 'danger',
+        'file_integrity_fail': 'danger',
+        'unauthorized_access': 'danger',
+        'password_change': 'warning',
+        'two_factor_enabled': 'success',
+      };
+      return classes[eventType] || '';
+    }
+    
+    async function loadUserSessions() {
+      const res = await api('/auth/sessions');
+      if (!res.success) return;
+      
+      const sessions = res.data;
+      document.getElementById('sessions-list').innerHTML = sessions.length ? sessions.map(s => `
+        <div class="session-item" style="padding: 12px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;">
+          <div>
+            <div><i class="fa-solid ${s.userAgent?.includes('Mobile') ? 'fa-mobile' : 'fa-desktop'}"></i> 
+              ${s.isCurrent ? '<span class="badge badge-success">Current</span>' : ''}
+            </div>
+            <div class="text-muted" style="font-size: 12px;">${s.ipAddress} • ${new Date(s.lastActiveAt).toLocaleString()}</div>
+          </div>
+          ${!s.isCurrent ? `<button class="btn btn-danger btn-sm" onclick="terminateSession('${s.id}')"><i class="fa-solid fa-power-off"></i></button>` : ''}
+        </div>
+      `).join('') : '<p class="text-muted">No active sessions</p>';
+    }
+    
+    async function terminateSession(sessionId) {
+      const res = await api(`/auth/sessions/${sessionId}`, 'DELETE');
+      if (res.success) {
+        toast('Session terminated', 'success');
+        loadUserSessions();
+      }
+    }
+    
+    async function terminateAllSessions() {
+      if (!confirm('This will log you out from all devices including this one. Continue?')) return;
+      const res = await api('/auth/logout-all', 'POST');
+      if (res.success) {
+        toast('All sessions terminated', 'success');
+        logout();
+      }
+    }
+    
+    async function verifyAllFiles() {
+      toast('Verifying all files...', 'info');
+      const res = await api('/files/verify-all', 'POST');
+      if (res.success) {
+        const r = res.data;
+        if (r.failed > 0) {
+          toast(`Verification complete: ${r.passed} passed, ${r.failed} failed`, 'error');
+        } else {
+          toast(`All ${r.total} files verified successfully`, 'success');
+        }
+        
+        // Show detailed results
+        document.getElementById('integrity-results').style.display = 'block';
+        document.getElementById('integrity-results').innerHTML = `
+          <div class="mb-3">
+            <span class="badge badge-success">${r.passed} Passed</span>
+            <span class="badge badge-danger">${r.failed} Failed</span>
+          </div>
+          ${r.results.filter(f => !f.valid).map(f => `
+            <div class="alert alert-danger">
+              <i class="fa-solid fa-file-circle-exclamation"></i> <strong>${escapeHtml(f.name)}</strong> - ${f.error || 'Checksum mismatch'}
+            </div>
+          `).join('') || '<p class="text-muted">All files passed integrity verification</p>'}
+        `;
+        
+        loadSecurityDashboard();
+      }
+    }
+    
+    async function secureDeleteFile(fileId) {
+      if (!confirm('This will securely delete the file with 3-pass overwrite. This cannot be undone. Continue?')) return;
+      
+      toast('Securely deleting file...', 'info');
+      const res = await api(`/files/${fileId}/secure`, 'DELETE');
+      if (res.success) {
+        toast('File securely deleted', 'success');
+        loadFiles();
+      } else {
+        toast(res.message, 'error');
+      }
+    }
+    
+    async function loadEncryptionInfo() {
+      const res = await api('/system/encryption-info');
+      if (!res.success) {
+        document.getElementById('encryption-info').innerHTML = `<div class="alert alert-danger">${res.message}</div>`;
+        return;
+      }
+      
+      const e = res.data;
+      document.getElementById('encryption-info').innerHTML = `
+        <div class="grid-2 mb-4">
+          <div class="card" style="margin: 0; background: var(--bg);">
+            <div class="text-muted">Algorithm</div>
+            <div style="font-size: 18px; font-weight: 600; color: var(--success);">
+              <i class="fa-solid fa-lock"></i> ${e.algorithm}
+            </div>
+            <div class="text-muted" style="font-size: 12px; margin-top: 5px;">${e.encryption.description}</div>
+          </div>
+          <div class="card" style="margin: 0; background: var(--bg);">
+            <div class="text-muted">Key Derivation</div>
+            <div style="font-size: 18px; font-weight: 600;">
+              <i class="fa-solid fa-key"></i> ${e.keyDerivation.algorithm.toUpperCase()}
+            </div>
+            <div class="text-muted" style="font-size: 12px; margin-top: 5px;">${e.keyDerivation.description}</div>
+          </div>
+          <div class="card" style="margin: 0; background: var(--bg);">
+            <div class="text-muted">Integrity Check</div>
+            <div style="font-size: 18px; font-weight: 600;">
+              <i class="fa-solid fa-shield-check"></i> ${e.integrity.algorithm}
+            </div>
+            <div class="text-muted" style="font-size: 12px; margin-top: 5px;">${e.integrity.description}</div>
+          </div>
+          <div class="card" style="margin: 0; background: var(--bg);">
+            <div class="text-muted">Version</div>
+            <div style="font-size: 18px; font-weight: 600;">
+              <i class="fa-solid fa-code-branch"></i> v${e.currentVersion}
+            </div>
+            <div class="text-muted" style="font-size: 12px; margin-top: 5px;">Latest encryption format</div>
+          </div>
+        </div>
+        
+        <div class="grid-2 mb-4">
+          <div>
+            <h4 class="mb-2"><i class="fa-solid fa-upload"></i> How Upload Works</h4>
+            <ol style="font-size: 13px; padding-left: 20px; color: var(--text-muted);">
+              ${e.howItWorks.upload.map(step => `<li style="margin-bottom: 5px;">${step}</li>`).join('')}
+            </ol>
+          </div>
+          <div>
+            <h4 class="mb-2"><i class="fa-solid fa-download"></i> How Download Works</h4>
+            <ol style="font-size: 13px; padding-left: 20px; color: var(--text-muted);">
+              ${e.howItWorks.download.map(step => `<li style="margin-bottom: 5px;">${step}</li>`).join('')}
+            </ol>
+          </div>
+        </div>
+        
+        <h4 class="mb-2"><i class="fa-solid fa-shield"></i> Security Features</h4>
+        <div class="mb-4">
+          ${e.securityFeatures.map(f => `
+            <div style="display: flex; align-items: center; gap: 8px; padding: 6px 0; font-size: 13px;">
+              <i class="fa-solid fa-check" style="color: var(--success);"></i>
+              <span>${f}</span>
+            </div>
+          `).join('')}
+        </div>
+        
+        <h4 class="mb-2"><i class="fa-solid fa-database"></i> File Format (Binary)</h4>
+        <div class="card" style="font-family: monospace; font-size: 12px; background: var(--bg);">
+          <div class="mb-2"><strong>Version 3 (Current):</strong></div>
+          <code style="color: var(--accent);">${e.fileFormat.v3}</code>
+          <div class="mt-3 mb-2"><strong>Version 2:</strong></div>
+          <code style="color: var(--warning);">${e.fileFormat.v2}</code>
+          <div class="mt-3 mb-2"><strong>Version 1 (Legacy):</strong></div>
+          <code style="color: var(--text-muted);">${e.fileFormat.v1}</code>
+        </div>
+        
+        <h4 class="mb-2 mt-4"><i class="fa-solid fa-cog"></i> Encryption Parameters</h4>
+        <div class="grid-2">
+          <div class="card" style="margin: 0; background: var(--bg); font-size: 13px;">
+            <table style="width: 100%;">
+              <tr><td class="text-muted">Key Size:</td><td>${e.encryption.keyLength}</td></tr>
+              <tr><td class="text-muted">IV Size:</td><td>${e.encryption.ivLength}</td></tr>
+              <tr><td class="text-muted">Auth Tag:</td><td>${e.encryption.authTagLength}</td></tr>
+              <tr><td class="text-muted">Mode:</td><td>${e.encryption.mode}</td></tr>
+            </table>
+          </div>
+          <div class="card" style="margin: 0; background: var(--bg); font-size: 13px;">
+            <table style="width: 100%;">
+              <tr><td class="text-muted">Salt Size:</td><td>${e.keyDerivation.parameters.saltLength}</td></tr>
+              <tr><td class="text-muted">scrypt N:</td><td>${e.keyDerivation.parameters.N}</td></tr>
+              <tr><td class="text-muted">scrypt r:</td><td>${e.keyDerivation.parameters.r}</td></tr>
+              <tr><td class="text-muted">scrypt p:</td><td>${e.keyDerivation.parameters.p}</td></tr>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+    
+    // ============ BREACH DETECTION (Admin) ============
+    async function loadBreachAnalysis() {
+      const res = await api('/security/breach-analysis');
+      if (!res.success) return;
+      
+      const d = res.data;
+      
+      // Threat level badge
+      const levelColors = { low: 'success', medium: 'warning', high: 'danger', critical: 'danger' };
+      document.getElementById('threat-level-badge').innerHTML = `
+        <span class="badge badge-${levelColors[d.threatLevel]}" style="font-size: 18px; padding: 10px 20px;">
+          ${d.threatLevel.toUpperCase()}
+        </span>
+      `;
+      document.getElementById('threat-analysis-time').textContent = `Last updated: ${new Date().toLocaleString()}`;
+      
+      // Summary stats
+      document.getElementById('threat-failed-logins').textContent = d.summary.failedLoginsLast24h;
+      document.getElementById('threat-locked-accounts').textContent = d.summary.lockedAccounts;
+      document.getElementById('threat-suspicious-ips').textContent = d.indicators.suspiciousIPs.length;
+      document.getElementById('threat-total-events').textContent = d.summary.totalEventsLast24h;
+      
+      // Suspicious IPs
+      document.getElementById('suspicious-ips-list').innerHTML = d.indicators.suspiciousIPs.length ? d.indicators.suspiciousIPs.map(ip => `
+        <div class="alert alert-${ip.severity === 'critical' ? 'danger' : 'warning'}" style="margin-bottom: 10px;">
+          <div class="flex items-center justify-between">
+            <div>
+              <i class="fa-solid fa-globe"></i> <strong>${ip.ip}</strong>
+              <span class="text-muted">• ${ip.failedAttempts} failed attempts</span>
+            </div>
+            <span class="badge badge-${ip.severity === 'critical' ? 'danger' : 'warning'}">${ip.severity.toUpperCase()}</span>
+          </div>
+        </div>
+      `).join('') : '<p class="text-muted">No suspicious IP addresses detected</p>';
+      
+      // Brute force targets
+      document.getElementById('brute-force-list').innerHTML = d.indicators.bruteForceTargets.length ? d.indicators.bruteForceTargets.map(t => `
+        <div class="alert alert-warning" style="margin-bottom: 10px;">
+          <div class="flex items-center justify-between">
+            <div>
+              <i class="fa-solid fa-user"></i> <strong>${escapeHtml(t.username || 'Unknown')}</strong>
+              <span class="text-muted">• ${t.failedAttempts} failed attempts</span>
+            </div>
+            <button class="btn btn-danger btn-sm" onclick="forcePasswordReset('${t.userId}')">Force Reset</button>
+          </div>
+        </div>
+      `).join('') : '<p class="text-muted">No brute force attacks detected</p>';
+      
+      // Multi-location users
+      document.getElementById('multi-location-list').innerHTML = d.indicators.multiLocationUsers.length ? d.indicators.multiLocationUsers.map(u => `
+        <div class="alert alert-info" style="margin-bottom: 10px;">
+          <div class="flex items-center justify-between">
+            <div>
+              <i class="fa-solid fa-user"></i> <strong>${escapeHtml(u.username || 'Unknown')}</strong>
+              <span class="text-muted">• ${u.uniqueIPs} unique IP addresses</span>
+            </div>
+            <button class="btn btn-warning btn-sm" onclick="terminateUserSessions('${u.userId}')">End Sessions</button>
+          </div>
+        </div>
+      `).join('') : '<p class="text-muted">No unusual session patterns detected</p>';
+      
+      // Recommendations
+      document.getElementById('recommendations-list').innerHTML = d.recommendations.length ? d.recommendations.map(r => `
+        <div class="alert ${r.includes('CRITICAL') ? 'alert-danger' : 'alert-info'}" style="margin-bottom: 10px;">
+          <i class="fa-solid ${r.includes('CRITICAL') ? 'fa-exclamation-circle' : 'fa-lightbulb'}"></i> ${r}
+        </div>
+      `).join('') : '<p class="text-muted">No specific recommendations at this time</p>';
+      
+      // Load session analytics
+      const analyticsRes = await api('/security/session-analytics');
+      if (analyticsRes.success) {
+        const a = analyticsRes.data;
+        document.getElementById('session-analytics').innerHTML = `
+          <div class="stats-grid">
+            <div class="stat-card"><div class="value">${a.totalSessions}</div><div class="label">Total Sessions</div></div>
+            <div class="stat-card"><div class="value">${a.byDevice.Desktop || 0}</div><div class="label">Desktop</div></div>
+            <div class="stat-card"><div class="value">${a.byDevice.Mobile || 0}</div><div class="label">Mobile</div></div>
+            <div class="stat-card"><div class="value">${a.byAge.active}</div><div class="label">Active (<1h)</div></div>
+            <div class="stat-card"><div class="value">${a.byAge.stale}</div><div class="label">Stale (1-24h)</div></div>
+            <div class="stat-card"><div class="value">${a.byAge.old}</div><div class="label">Old (>24h)</div></div>
+          </div>
+          ${a.topUsers.length ? `
+            <h4 class="mt-4 mb-2">Users with Most Sessions</h4>
+            ${a.topUsers.map(u => `
+              <div style="padding: 8px 0; border-bottom: 1px solid var(--border);">
+                <strong>${escapeHtml(u.username)}</strong> - ${u.sessionCount} sessions
+              </div>
+            `).join('')}
+          ` : ''}
+        `;
+      }
+    }
+    
+    async function forcePasswordReset(userId) {
+      if (!confirm('Force password reset for this user? They will be required to change their password on next login.')) return;
+      const res = await api(`/security/force-password-reset/${userId}`, 'POST');
+      if (res.success) {
+        toast('Password reset enforced', 'success');
+        loadBreachAnalysis();
+      }
+    }
+    
+    async function terminateUserSessions(userId) {
+      if (!confirm('Terminate all sessions for this user?')) return;
+      const res = await api(`/security/sessions/user/${userId}`, 'DELETE');
+      if (res.success) {
+        toast(res.message, 'success');
+        loadBreachAnalysis();
+      }
+    }
+    
+    async function unlockUserAccount(userId) {
+      const res = await api(`/security/unlock/${userId}`, 'POST');
+      if (res.success) {
+        toast('Account unlocked', 'success');
+        loadBreachAnalysis();
+      }
+    }
+    
+    async function exportSecurityEvents() {
+      window.open('/api/security/events/export?format=csv', '_blank');
+    }
+    
+    async function exportAuditLog() {
+      window.open('/api/audit/export?format=csv', '_blank');
+    }
+
+    // ============ AUTO-LOCK TIMEOUT ============
+    let autoLockTimer = null;
+    let autoLockMinutes = 30;
+    
+    function resetAutoLockTimer() {
+      if (autoLockTimer) clearTimeout(autoLockTimer);
+      if (!token || autoLockMinutes <= 0) return;
+      
+      autoLockTimer = setTimeout(() => {
+        toast('Session timed out due to inactivity', 'warning');
+        logout();
+      }, autoLockMinutes * 60 * 1000);
+    }
+    
+    // Reset timer on user activity
+    ['click', 'keydown', 'mousemove', 'scroll'].forEach(event => {
+      document.addEventListener(event, () => {
+        if (token) resetAutoLockTimer();
+      }, { passive: true });
+    });
+
+    // ============ MODALS ============
+    function openModal(id) {
+      document.getElementById(id).classList.add('active');
+    }
+
+    function closeModal(id) {
+      // Cleanup blob URLs when closing preview modal
+      if (id === 'preview-modal') {
+        const content = document.getElementById('preview-content');
+        const embed = content.querySelector('embed');
+        if (embed && embed.src.startsWith('blob:')) {
+          URL.revokeObjectURL(embed.src);
+        }
+        content.innerHTML = '';
+      }
+      document.getElementById(id).classList.remove('active');
+    }
+
+    // Close modals on overlay click
+    // Close modals on overlay click
+    document.querySelectorAll('.modal-overlay').forEach(overlay => {
+      overlay.onclick = (e) => {
+        if (e.target === overlay) closeModal(overlay.id);
+      };
+    });
+
+    // ============ TOAST ============
+    function toast(message, type = 'success') {
+      const container = document.getElementById('toast-container');
+      const toast = document.createElement('div');
+      toast.className = `toast ${type}`;
+      toast.innerHTML = `
+        <span>${type === 'success' ? '<i class="fa-solid fa-check"></i>' : type === 'error' ? '<i class="fa-solid fa-xmark"></i>' : '<i class="fa-solid fa-triangle-exclamation"></i>'}</span>
+        <span>${escapeHtml(message)}</span>
+      `;
+      container.appendChild(toast);
+      setTimeout(() => toast.remove(), 4000);
+    }
+
+    // ============ HELPERS ============
+    function getFileIconClass(mimeType, fileName = '') {
+      const ext = fileName ? fileName.split('.').pop()?.toLowerCase() || '' : '';
+      
+      if (mimeType.startsWith('image/')) return 'icon-image';
+      if (mimeType === 'application/pdf') return 'icon-pdf';
+      if (mimeType.includes('word') || mimeType === 'application/msword') return 'icon-word';
+      if (mimeType.includes('excel') || mimeType.includes('spreadsheet')) return 'icon-excel';
+      if (mimeType.includes('zip') || mimeType.includes('compressed') || mimeType.includes('archive')) return 'icon-zip';
+      if (mimeType.startsWith('video/')) return 'icon-video';
+      if (mimeType.startsWith('audio/')) return 'icon-audio';
+      if (mimeType.startsWith('text/') || mimeType === 'application/json' || mimeType === 'application/xml') {
+        const codeExts = ['js', 'ts', 'py', 'java', 'c', 'cpp', 'cs', 'go', 'rb', 'php', 'html', 'css', 'json', 'xml', 'yaml', 'yml', 'sh', 'sql'];
+        if (codeExts.includes(ext)) return 'icon-code';
+        return 'icon-text';
+      }
+      if (mimeType.includes('powerpoint') || mimeType.includes('presentation')) return 'icon-ppt';
+      return 'icon-default';
+    }
+    
+    function getFileIcon(mimeType, fileName = '') {
+      const ext = fileName ? fileName.split('.').pop()?.toLowerCase() || '' : '';
+      const iconClass = getFileIconClass(mimeType, fileName);
+      let icon = '<i class="fa-regular fa-file"></i>';
+      
+      if (mimeType.startsWith('image/')) icon = '<i class="fa-regular fa-image"></i>';
+      else if (mimeType === 'application/pdf') icon = '<i class="fa-regular fa-file-pdf"></i>';
+      else if (mimeType.includes('word') || mimeType === 'application/msword') icon = '<i class="fa-regular fa-file-word"></i>';
+      else if (mimeType.includes('excel') || mimeType.includes('spreadsheet')) icon = '<i class="fa-regular fa-file-excel"></i>';
+      else if (mimeType.includes('zip') || mimeType.includes('compressed') || mimeType.includes('archive')) icon = '<i class="fa-regular fa-file-zipper"></i>';
+      else if (mimeType.startsWith('video/')) icon = '<i class="fa-solid fa-film"></i>';
+      else if (mimeType.startsWith('audio/')) icon = '<i class="fa-solid fa-music"></i>';
+      else if (mimeType.startsWith('text/') || mimeType === 'application/json' || mimeType === 'application/xml') {
+        const codeExts = ['js', 'ts', 'py', 'java', 'c', 'cpp', 'cs', 'go', 'rb', 'php', 'html', 'css', 'json', 'xml', 'yaml', 'yml', 'sh', 'sql'];
+        if (codeExts.includes(ext)) icon = '<i class="fa-solid fa-code"></i>';
+        else icon = '<i class="fa-regular fa-file-lines"></i>';
+      }
+      else if (mimeType.includes('powerpoint') || mimeType.includes('presentation')) icon = '<i class="fa-regular fa-file-powerpoint"></i>';
+      
+      // Return icon content with optional extension label
+      const showExt = ext && ext.length <= 4;
+      if (showExt) {
+        return `${icon}<span class="file-ext">${ext}</span>`;
+      }
+      return icon;
+    }
+    
+    // Get full file icon HTML with wrapper div
+    function getFileIconFull(mimeType, fileName = '') {
+      const iconClass = getFileIconClass(mimeType, fileName);
+      const iconContent = getFileIcon(mimeType, fileName);
+      return `<div class="file-icon ${iconClass}">${iconContent}</div>`;
+    }
+    
+    // Simple colored icon (for inline use, activity feed, etc)
+    function getFileIconSimple(mimeType) {
+      if (mimeType.startsWith('image/')) return '<i class="fa-regular fa-image" style="color: #10b981;"></i>';
+      if (mimeType === 'application/pdf') return '<i class="fa-regular fa-file-pdf" style="color: #ef4444;"></i>';
+      if (mimeType.includes('word')) return '<i class="fa-regular fa-file-word" style="color: #3b82f6;"></i>';
+      if (mimeType.includes('excel') || mimeType.includes('spreadsheet')) return '<i class="fa-regular fa-file-excel" style="color: #22c55e;"></i>';
+      if (mimeType.includes('zip')) return '<i class="fa-regular fa-file-zipper" style="color: #f59e0b;"></i>';
+      if (mimeType.startsWith('video/')) return '<i class="fa-solid fa-film" style="color: #8b5cf6;"></i>';
+      if (mimeType.startsWith('audio/')) return '<i class="fa-solid fa-music" style="color: #ec4899;"></i>';
+      if (mimeType.startsWith('text/')) return '<i class="fa-regular fa-file-lines" style="color: #6b7280;"></i>';
+      return '<i class="fa-regular fa-file" style="color: #64748b;"></i>';
+    }
+
+    function getActionIcon(action) {
+      const icons = {
+        'LOGIN': '<i class="fa-solid fa-right-to-bracket"></i>', 
+        'LOGOUT': '<i class="fa-solid fa-right-from-bracket"></i>', 
+        'REGISTER': '<i class="fa-solid fa-user-plus"></i>',
+        'UPLOAD': '<i class="fa-solid fa-cloud-arrow-up"></i>', 
+        'DOWNLOAD': '<i class="fa-solid fa-cloud-arrow-down"></i>', 
+        'DELETE': '<i class="fa-regular fa-trash-can"></i>',
+        'SHARE': '<i class="fa-solid fa-share-nodes"></i>', 
+        'PREVIEW': '<i class="fa-regular fa-eye"></i>', 
+        'COMMENT': '<i class="fa-regular fa-comment"></i>',
+        'CREATE_FOLDER': '<i class="fa-regular fa-folder"></i>', 
+        'TRASH': '<i class="fa-regular fa-trash-can"></i>', 
+        'RESTORE': '<i class="fa-solid fa-rotate-left"></i>',
+      };
+      return icons[action] || '<i class="fa-regular fa-clipboard"></i>';
+    }
+
+    function formatSize(bytes) {
+      if (!bytes) return '0 B';
+      if (bytes < 1024) return bytes + ' B';
+      if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+      if (bytes < 1073741824) return (bytes / 1048576).toFixed(1) + ' MB';
+      return (bytes / 1073741824).toFixed(1) + ' GB';
+    }
+
+    function timeAgo(date) {
+      const seconds = Math.floor((Date.now() - new Date(date).getTime()) / 1000);
+      if (seconds < 60) return 'just now';
+      if (seconds < 3600) return Math.floor(seconds / 60) + 'm ago';
+      if (seconds < 86400) return Math.floor(seconds / 3600) + 'h ago';
+      if (seconds < 604800) return Math.floor(seconds / 86400) + 'd ago';
+      return new Date(date).toLocaleDateString();
+    }
+
+    function escapeHtml(str) {
+      if (!str) return '';
+      return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    function escapeJs(str) {
+      if (!str) return '';
+      return String(str).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '\\"');
+    }
+
+    function toggleSidebar() {
+      document.getElementById('sidebar').classList.toggle('open');
+    }
+
+    // Password change form
+    document.getElementById('password-form').onsubmit = async (e) => {
+      e.preventDefault();
+      const res = await api('/auth/change-password', 'POST', {
+        currentPassword: document.getElementById('current-password').value,
+        newPassword: document.getElementById('new-password').value,
+      });
+      
+      if (res.success) {
+        toast('Password changed! Please login again.', 'success');
+        setTimeout(logout, 2000);
+      } else {
+        toast(res.message, 'error');
+      }
+    };
+
+    // Keyboard shortcuts
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        document.querySelectorAll('.modal-overlay.active').forEach(m => m.classList.remove('active'));
+      }
+      if (e.ctrlKey && e.key === 'u') {
+        e.preventDefault();
+        openUploadModal();
+      }
+    });
+
+    // ============ CREATE TEST ENCRYPTED FILE ============
+    function createTestEncryptedFile() {
+      // Open the modal to collect encryption key
+      const modal = document.getElementById('encryption-key-modal');
+      modal.classList.add('active');
+      
+      // Clear and focus input
+      const keyInput = document.getElementById('modal-encryption-key');
+      keyInput.value = '';
+      keyInput.focus();
+      
+      // Hide key display area
+      document.getElementById('key-display-area').style.display = 'none';
+      document.getElementById('key-strength').style.display = 'none';
+    }
+
+    function toggleKeyVisibility() {
+      const keyInput = document.getElementById('modal-encryption-key');
+      const btn = document.getElementById('show-key-btn');
+      const displayArea = document.getElementById('key-display-area');
+      
+      if (keyInput.type === 'password') {
+        keyInput.type = 'text';
+        btn.innerHTML = '<i class="fas fa-eye"></i>';
+        
+        // Show the key in display area
+        if (keyInput.value.length >= 8) {
+          displayArea.style.display = 'block';
+          document.getElementById('displayed-key').textContent = keyInput.value;
+        }
+      } else {
+        keyInput.type = 'password';
+        btn.innerHTML = '<i class="fas fa-eye-slash"></i>';
+        displayArea.style.display = 'none';
+      }
+    }
+
+    // Update key display and strength as user types
+    document.getElementById('modal-encryption-key').addEventListener('input', (e) => {
+      const key = e.target.value;
+      const displayArea = document.getElementById('key-display-area');
+      const strengthDiv = document.getElementById('key-strength');
+      
+      if (key.length >= 8) {
+        if (e.target.type === 'text') {
+          displayArea.style.display = 'block';
+          document.getElementById('displayed-key').textContent = key;
+        }
+        
+        // Update strength
+        let strength = 0;
+        let text = 'Weak';
+        let color = '#dc2626';
+        
+        if (key.length >= 8) strength += 25;
+        if (key.length >= 12) strength += 15;
+        if (key.length >= 16) strength += 20;
+        if (/[a-z]/.test(key) && /[A-Z]/.test(key)) strength += 15;
+        if (/[0-9]/.test(key)) strength += 10;
+        if (/[!@#$%^&*]/.test(key)) strength += 15;
+        
+        if (strength >= 75) {
+          text = 'Strong';
+          color = '#22c55e';
+        } else if (strength >= 50) {
+          text = 'Good';
+          color = '#f59e0b';
+        }
+        
+        strengthDiv.style.display = 'block';
+        document.getElementById('strength-text').textContent = text;
+        document.getElementById('strength-bar').style.width = strength + '%';
+        document.getElementById('strength-bar').style.background = color;
+      } else {
+        displayArea.style.display = 'none';
+        strengthDiv.style.display = 'none';
+      }
+    });
+
+    function copyKeyToClipboard() {
+      const key = document.getElementById('modal-encryption-key').value;
+      navigator.clipboard.writeText(key).then(() => {
+        const btn = document.getElementById('copy-key-btn');
+        const originalHtml = btn.innerHTML;
+        btn.innerHTML = '<i class="fas fa-check" style="color: var(--success);"></i>';
+        setTimeout(() => {
+          btn.innerHTML = originalHtml;
+        }, 2000);
+        toast('Encryption key copied to clipboard!', 'success');
+      }).catch(err => {
+        console.error('Copy failed:', err);
+        toast('Failed to copy key', 'error');
+      });
+    }
+
+    async function proceedCreateTestFile() {
+      const encryptionKey = document.getElementById('modal-encryption-key').value;
+      
+      if (!encryptionKey || encryptionKey.length < 8) {
+        toast('Encryption key must be at least 8 characters', 'error');
+        return;
+      }
+
+      const btn = document.getElementById('create-test-file-btn');
+      btn.disabled = true;
+      btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Creating...';
+
+      try {
+        const response = await fetch('/api/test-create-encrypted-file', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${localStorage.getItem('token')}`
+          },
+          body: JSON.stringify({ encryptionKey })
+        });
+
+        if (!response.ok) {
+          const err = await response.json();
+          throw new Error(err.error || 'Failed to create test file');
+        }
+
+        // Download the test file
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `test-encrypted-${Date.now()}.enc`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+
+        closeModal('encryption-key-modal');
+        toast(`✓ Test file created! Your key is: "${encryptionKey}"`, 'success');
+      } catch (err) {
+        console.error('Test file error:', err);
+        toast('Error creating test file: ' + err.message, 'error');
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-file-circle-plus"></i> Create Test File';
+      }
+    }
+
+    // ============ DECRYPT FILE FUNCTIONALITY ============
+    const decryptFileInput = document.getElementById('decrypt-file-input');
+    const decryptFileDrop = document.getElementById('decrypt-file-drop');
+    const decryptKeyInput = document.getElementById('decrypt-key-input');
+    const decryptShowKeyCheckbox = document.getElementById('decrypt-show-key');
+    const decryptForm = document.getElementById('decrypt-form');
+
+    // File upload handling
+    decryptFileDrop.addEventListener('click', () => {
+      decryptFileInput.click();
+    });
+
+    decryptFileDrop.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      decryptFileDrop.classList.add('dragover');
+    });
+
+    decryptFileDrop.addEventListener('dragleave', () => {
+      decryptFileDrop.classList.remove('dragover');
+    });
+
+    decryptFileDrop.addEventListener('drop', (e) => {
+      e.preventDefault();
+      decryptFileDrop.classList.remove('dragover');
+      if (e.dataTransfer.files.length > 0) {
+        decryptFileInput.files = e.dataTransfer.files;
+        updateDecryptFilePreview();
+      }
+    });
+
+    decryptFileInput.addEventListener('change', updateDecryptFilePreview);
+
+    function updateDecryptFilePreview() {
+      const preview = document.getElementById('decrypt-file-preview');
+      const fileName = document.getElementById('decrypt-file-name');
+      
+      if (decryptFileInput.files.length > 0) {
+        const file = decryptFileInput.files[0];
+        fileName.textContent = file.name;
+        preview.style.display = 'block';
+      } else {
+        preview.style.display = 'none';
+      }
+    }
+
+    // Show/hide encryption key
+    decryptShowKeyCheckbox.addEventListener('change', () => {
+      decryptKeyInput.type = decryptShowKeyCheckbox.checked ? 'text' : 'password';
+    });
+
+    // Handle form submission
+    decryptForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      const file = decryptFileInput.files[0];
+      const encryptionKey = decryptKeyInput.value;
+
+      if (!file) {
+        toast('Please select an encrypted file', 'error');
+        return;
+      }
+
+      if (!encryptionKey) {
+        toast('Please enter the encryption key', 'error');
+        return;
+      }
+
+      if (encryptionKey.length < 8) {
+        toast('Encryption key must be at least 8 characters', 'error');
+        return;
+      }
+
+      await decryptFile(file, encryptionKey);
+    });
+
+    async function decryptFile(file, encryptionKey) {
+      const progressDiv = document.getElementById('decrypt-progress');
+      const statusDiv = document.getElementById('decrypt-status');
+      const submitBtn = document.getElementById('decrypt-submit-btn');
+
+      // Clear previous status
+      statusDiv.innerHTML = '';
+      statusDiv.style.display = 'none';
+
+      // Trim the encryption key
+      encryptionKey = encryptionKey.trim();
+
+      // Show progress
+      progressDiv.style.display = 'block';
+      submitBtn.disabled = true;
+
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('encryptionKey', encryptionKey);
+
+      try {
+        const response = await fetch('/api/decrypt-file', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('token')}`
+          },
+          body: formData
+        });
+
+        progressDiv.style.display = 'none';
+
+        if (response.ok) {
+          // Get the actual filename from the Content-Disposition header if available
+          const contentDisposition = response.headers.get('content-disposition');
+          let fileName = 'decrypted-file';
+          if (contentDisposition) {
+            const match = contentDisposition.match(/filename="(.+?)"/);
+            if (match) {
+              fileName = decodeURIComponent(match[1]);
+            }
+          }
+
+          // Download the file
+          const blob = await response.blob();
+          const url = window.URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = fileName;
+          document.body.appendChild(a);
+          a.click();
+          window.URL.revokeObjectURL(url);
+          document.body.removeChild(a);
+
+          // Show success message
+          statusDiv.innerHTML = `
+            <div style="padding: 12px; background-color: rgba(34, 197, 94, 0.1); border: 1px solid #22c55e; border-radius: 4px; color: var(--success); display: flex; align-items: center; gap: 8px;">
+              <i class="fas fa-check-circle"></i>
+              <span>File successfully decrypted! Your file has been downloaded.</span>
+            </div>
+          `;
+          statusDiv.style.display = 'block';
+
+          // Reset form
+          decryptForm.reset();
+          updateDecryptFilePreview();
+
+          // Add to history
+          addDecryptionToHistory(fileName);
+
+          toast('File decrypted successfully!', 'success');
+        } else {
+          const errorData = await response.json();
+          let errorMessage = errorData.error || 'Decryption failed';
+
+          console.error('Decryption error from server:', errorMessage);
+
+          // Better error messages
+          if (response.status === 400) {
+            if (errorMessage.includes('Invalid key') || errorMessage.includes('Invalid encryption key')) {
+              errorMessage = '❌ The encryption key is incorrect. Please verify you used the exact same key.';
+            } else if (errorMessage.includes('not encrypted with a user key')) {
+              errorMessage = '⚠️ This file was not encrypted with a user key. Upload a .enc file created by the "Create Test File" feature.';
+            } else if (errorMessage.includes('tampered') || errorMessage.includes('corrupted')) {
+              errorMessage = '⚠️ The file appears to be corrupted or damaged. Try uploading it again.';
+            } else if (errorMessage.includes('No file')) {
+              errorMessage = '📁 Please select an encrypted file to decrypt.';
+            } else if (errorMessage.includes('Encryption key is required')) {
+              errorMessage = '🔑 Please enter your encryption key.';
+            }
+          }
+          
+          statusDiv.innerHTML = `
+            <div style="padding: 12px; background-color: rgba(239, 68, 68, 0.1); border: 1px solid #ef4444; border-radius: 4px; color: var(--danger); display: flex; align-items: center; gap: 8px;">
+              <i class="fas fa-exclamation-circle"></i>
+              <span>${errorMessage}</span>
+            </div>
+          `;
+          statusDiv.style.display = 'block';
+
+          toast(errorMessage, 'error');
+        }
+      } catch (err) {
+        console.error('Decryption error:', err);
+        progressDiv.style.display = 'none';
+
+        statusDiv.innerHTML = `
+          <div style="padding: 12px; background-color: rgba(239, 68, 68, 0.1); border: 1px solid #ef4444; border-radius: 4px; color: var(--danger); display: flex; align-items: center; gap: 8px;">
+            <i class="fas fa-exclamation-circle"></i>
+            <span>❌ An error occurred during decryption. Check your browser console for details.</span>
+          </div>
+        `;
+        statusDiv.style.display = 'block';
+
+        toast('Decryption error: ' + err.message, 'error');
+      } finally {
+        submitBtn.disabled = false;
+      }
+    }
+
+    function addDecryptionToHistory(fileName) {
+      const historyDiv = document.getElementById('decrypt-history');
+      const currentContent = historyDiv.innerHTML;
+
+      // If still showing the initial message, replace it
+      if (currentContent.includes('No recent decryptions')) {
+        historyDiv.innerHTML = '';
+      }
+
+      const timeStr = new Date().toLocaleString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+
+      const historyItem = document.createElement('div');
+      historyItem.style.cssText = 'padding: 12px; background: var(--bg); border-radius: 4px; border-left: 3px solid var(--success); margin-bottom: 8px;';
+      historyItem.innerHTML = `
+        <div style="display: flex; align-items: center; justify-content: space-between;">
+          <div>
+            <div style="font-weight: 500; color: var(--text);">${fileName}</div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">${timeStr}</div>
+          </div>
+          <i class="fas fa-check-circle" style="color: var(--success); font-size: 18px;"></i>
+        </div>
+      `;
+
+      historyDiv.insertBefore(historyItem, historyDiv.firstChild);
+
+      // Keep only last 5 items
+      const items = historyDiv.querySelectorAll('div[style*="border-left"]');
+      if (items.length > 5) {
+        items[items.length - 1].remove();
+      }
+    }
+  </script>
+</body>
+</html>
