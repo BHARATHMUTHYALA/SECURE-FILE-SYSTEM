@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Crypto Functions Test</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 800px;
+      margin: 50px auto;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    .test-section {
+      background: white;
+      padding: 20px;
+      margin: 20px 0;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .test-result {
+      padding: 10px;
+      margin: 10px 0;
+      border-radius: 4px;
+      font-family: monospace;
+    }
+    .success {
+      background: #d4edda;
+      color: #155724;
+      border: 1px solid #c3e6cb;
+    }
+    .error {
+      background: #f8d7da;
+      color: #721c24;
+      border: 1px solid #f5c6cb;
+    }
+    button {
+      background: #007bff;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+      margin: 5px;
+    }
+    button:hover {
+      background: #0056b3;
+    }
+    h1 {
+      color: #333;
+    }
+    h2 {
+      color: #666;
+      margin-top: 0;
+    }
+  </style>
+</head>
+<body>
+  <h1>🔐 Zero-Knowledge Crypto Functions Test</h1>
+  
+  <div class="test-section">
+    <h2>Test 1: Basic Text Encryption/Decryption</h2>
+    <button onclick="testTextEncryption()">Run Test</button>
+    <div id="test1-result"></div>
+  </div>
+
+  <div class="test-section">
+    <h2>Test 2: File Encryption/Decryption</h2>
+    <input type="file" id="fileInput" />
+    <button onclick="testFileEncryption()">Run Test</button>
+    <div id="test2-result"></div>
+  </div>
+
+  <div class="test-section">
+    <h2>Test 3: Wrong Password Detection</h2>
+    <button onclick="testWrongPassword()">Run Test</button>
+    <div id="test3-result"></div>
+  </div>
+
+  <div class="test-section">
+    <h2>Test 4: Large Data Encryption</h2>
+    <button onclick="testLargeData()">Run Test</button>
+    <div id="test4-result"></div>
+  </div>
+
+  <div class="test-section">
+    <h2>Test 5: Hash Function</h2>
+    <button onclick="testHash()">Run Test</button>
+    <div id="test5-result"></div>
+  </div>
+
+  <script src="/js/crypto-client.js"></script>
+  <script>
+    function showResult(elementId, success, message) {
+      const element = document.getElementById(elementId);
+      element.innerHTML = `<div class="test-result ${success ? 'success' : 'error'}">${message}</div>`;
+    }
+
+    async function testTextEncryption() {
+      const resultId = 'test1-result';
+      try {
+        showResult(resultId, true, 'Running test...');
+        
+        const originalText = 'Hello, Zero-Knowledge World! 🔐';
+        const password = 'test-password-123';
+        
+        // Encrypt
+        const encrypted = await window.cryptoClient.encrypt(originalText, password);
+        console.log('Encrypted:', encrypted);
+        
+        // Decrypt
+        const decrypted = await window.cryptoClient.decrypt(encrypted, password);
+        const decryptedText = new TextDecoder().decode(decrypted);
+        
+        if (decryptedText === originalText) {
+          showResult(resultId, true, `✅ SUCCESS\nOriginal: "${originalText}"\nDecrypted: "${decryptedText}"\nEncrypted size: ${encrypted.length} bytes`);
+        } else {
+          showResult(resultId, false, `❌ FAILED\nOriginal: "${originalText}"\nDecrypted: "${decryptedText}"`);
+        }
+      } catch (error) {
+        showResult(resultId, false, `❌ ERROR: ${error.message}`);
+      }
+    }
+
+    async function testFileEncryption() {
+      const resultId = 'test2-result';
+      const fileInput = document.getElementById('fileInput');
+      
+      if (!fileInput.files[0]) {
+        showResult(resultId, false, '❌ Please select a file first');
+        return;
+      }
+      
+      try {
+        showResult(resultId, true, 'Running test...');
+        
+        const file = fileInput.files[0];
+        const password = 'file-test-password';
+        
+        // Read original file
+        const originalData = await file.arrayBuffer();
+        
+        // Encrypt
+        const encryptedBlob = await window.cryptoClient.encryptFile(file, password);
+        console.log('Encrypted file:', encryptedBlob);
+        
+        // Decrypt
+        const decryptedData = await window.cryptoClient.decryptFile(encryptedBlob, password);
+        
+        // Compare
+        const originalArray = new Uint8Array(originalData);
+        const decryptedArray = new Uint8Array(decryptedData);
+        
+        let match = originalArray.length === decryptedArray.length;
+        if (match) {
+          for (let i = 0; i < originalArray.length; i++) {
+            if (originalArray[i] !== decryptedArray[i]) {
+              match = false;
+              break;
+            }
+          }
+        }
+        
+        if (match) {
+          showResult(resultId, true, `✅ SUCCESS\nFile: ${file.name}\nOriginal size: ${originalData.byteLength} bytes\nEncrypted size: ${encryptedBlob.size} bytes\nDecrypted size: ${decryptedData.byteLength} bytes\nData matches: YES`);
+        } else {
+          showResult(resultId, false, `❌ FAILED\nDecrypted data does not match original`);
+        }
+      } catch (error) {
+        showResult(resultId, false, `❌ ERROR: ${error.message}`);
+      }
+    }
+
+    async function testWrongPassword() {
+      const resultId = 'test3-result';
+      try {
+        showResult(resultId, true, 'Running test...');
+        
+        const originalText = 'Secret message';
+        const correctPassword = 'correct-password';
+        const wrongPassword = 'wrong-password';
+        
+        // Encrypt with correct password
+        const encrypted = await window.cryptoClient.encrypt(originalText, correctPassword);
+        
+        // Try to decrypt with wrong password
+        try {
+          await window.cryptoClient.decrypt(encrypted, wrongPassword);
+          showResult(resultId, false, '❌ FAILED: Decryption should have failed with wrong password');
+        } catch (decryptError) {
+          if (decryptError.message.includes('Wrong password')) {
+            showResult(resultId, true, `✅ SUCCESS\nWrong password correctly detected\nError: ${decryptError.message}`);
+          } else {
+            showResult(resultId, false, `❌ FAILED: Wrong error message\nGot: ${decryptError.message}`);
+          }
+        }
+      } catch (error) {
+        showResult(resultId, false, `❌ ERROR: ${error.message}`);
+      }
+    }
+
+    async function testLargeData() {
+      const resultId = 'test4-result';
+      try {
+        showResult(resultId, true, 'Running test...');
+        
+        // Create 1MB of random data
+        const size = 1024 * 1024; // 1MB
+        const largeData = new Uint8Array(size);
+        crypto.getRandomValues(largeData);
+        
+        const password = 'large-data-password';
+        
+        const startTime = performance.now();
+        
+        // Encrypt
+        const encrypted = await window.cryptoClient.encrypt(largeData, password);
+        const encryptTime = performance.now() - startTime;
+        
+        // Decrypt
+        const decryptStart = performance.now();
+        const decrypted = await window.cryptoClient.decrypt(encrypted, password);
+        const decryptTime = performance.now() - decryptStart;
+        
+        // Verify
+        let match = largeData.length === decrypted.length;
+        if (match) {
+          for (let i = 0; i < largeData.length; i++) {
+            if (largeData[i] !== decrypted[i]) {
+              match = false;
+              break;
+            }
+          }
+        }
+        
+        if (match) {
+          showResult(resultId, true, `✅ SUCCESS\nData size: ${size.toLocaleString()} bytes (1MB)\nEncryption time: ${encryptTime.toFixed(2)}ms\nDecryption time: ${decryptTime.toFixed(2)}ms\nData matches: YES`);
+        } else {
+          showResult(resultId, false, `❌ FAILED: Decrypted data does not match`);
+        }
+      } catch (error) {
+        showResult(resultId, false, `❌ ERROR: ${error.message}`);
+      }
+    }
+
+    async function testHash() {
+      const resultId = 'test5-result';
+      try {
+        showResult(resultId, true, 'Running test...');
+        
+        const data1 = 'Hello World';
+        const data2 = 'Hello World';
+        const data3 = 'Hello World!';
+        
+        const hash1 = await window.cryptoClient.hash(data1);
+        const hash2 = await window.cryptoClient.hash(data2);
+        const hash3 = await window.cryptoClient.hash(data3);
+        
+        const sameHash = hash1 === hash2;
+        const differentHash = hash1 !== hash3;
+        
+        if (sameHash && differentHash) {
+          showResult(resultId, true, `✅ SUCCESS\nHash of "${data1}": ${hash1}\nHash of "${data2}": ${hash2}\nHash of "${data3}": ${hash3}\nSame input = same hash: YES\nDifferent input = different hash: YES`);
+        } else {
+          showResult(resultId, false, `❌ FAILED\nSame hash: ${sameHash}\nDifferent hash: ${differentHash}`);
+        }
+      } catch (error) {
+        showResult(resultId, false, `❌ ERROR: ${error.message}`);
+      }
+    }
+
+    // Auto-run basic test on load
+    window.addEventListener('load', () => {
+      setTimeout(() => {
+        testTextEncryption();
+      }, 500);
+    });
+  </script>
+</body>
+</html>

@@ -20,6 +20,7 @@ export interface User {
   // Security features
   twoFactorSecret?: string;
   twoFactorEnabled: boolean;
+  twoFactorBackupCodes?: string[]; // Hashed backup codes for 2FA recovery
   storageQuota: number;
   storageUsed: number;
   avatar?: string;
@@ -30,6 +31,9 @@ export interface User {
   // Security enhancements
   passwordChangedAt?: Date;
   encryptionKeyVersion: number;
+  // RSA key pair for key wrapping (used for sharing user-encrypted files)
+  publicKey?: string;
+  privateKey?: string;
 }
 
 export interface UserPreferences {
@@ -79,6 +83,62 @@ export interface FileRecord {
   encryptionVersion: number;
   integrityVerifiedAt?: Date;
   userKeyEncrypted?: boolean; // True if encrypted with user-provided key (key not stored on server)
+  encryptionAlgorithm?: EncryptionAlgorithmType; // Algorithm used for encryption
+  hybridKeyId?: string; // Reference to user's key pair if hybrid encryption used
+  signatureId?: string; // Reference to digital signature if file is signed
+}
+
+// ============ ENCRYPTION TYPES ============
+
+export enum EncryptionAlgorithmType {
+  AES_256_GCM = 'aes-256-gcm',
+  CHACHA20_POLY1305 = 'chacha20-poly1305',
+  HYBRID_RSA_AES = 'hybrid-rsa-aes',
+  HYBRID_RSA_CHACHA = 'hybrid-rsa-chacha',
+  ENVELOPE = 'envelope',
+  USER_KEY = 'user-key',
+  SERVER_KEY = 'server-key'
+}
+
+// User's encryption key pairs
+export interface UserKeyPair {
+  id: string;
+  userId: string;
+  name: string;
+  type: 'rsa' | 'ecdh' | 'ed25519' | 'ecdsa';
+  publicKey: string;
+  encryptedPrivateKey: string; // Private key encrypted with user's password
+  keySize?: number; // For RSA
+  curve?: string; // For ECDH/ECDSA
+  createdAt: Date;
+  lastUsedAt?: Date;
+  isDefault: boolean;
+}
+
+// Digital signature record
+export interface FileSignature {
+  id: string;
+  fileId: string;
+  signedBy: string;
+  signature: string;
+  algorithm: 'ed25519' | 'ecdsa' | 'rsa';
+  publicKeyId: string;
+  signedAt: Date;
+  isValid?: boolean;
+  lastVerifiedAt?: Date;
+}
+
+// Encryption audit log
+export interface EncryptionAudit {
+  id: string;
+  fileId: string;
+  userId: string;
+  action: 'encrypt' | 'decrypt' | 'reencrypt' | 'sign' | 'verify';
+  algorithm: EncryptionAlgorithmType;
+  timestamp: Date;
+  success: boolean;
+  errorMessage?: string;
+  ipAddress?: string;
 }
 
 export interface ShareLink {
@@ -93,6 +153,25 @@ export interface ShareLink {
   allowedEmails?: string[];
   createdAt: Date;
   isActive: boolean;
+  requireZeroTrustProof?: boolean;
+  secureShare?: {
+    enabled: boolean;
+    keyExchange: 'rsa-oaep-sha256';
+    wrappedSecrets: Record<string, string>; // recipientId -> base64 wrapped secret
+    recipientHints?: string[];
+  };
+}
+
+// ============ KEY WRAPPING FOR USER-ENCRYPTED FILES ============
+
+export interface WrappedKey {
+  id: string;
+  fileId: string;
+  userId: string;           // The user who can unwrap this key
+  wrappedDek: string;        // The DEK encrypted with user's public key (base64)
+  algorithm: 'aes-256-gcm';  // Algorithm used for the DEK
+  createdAt: Date;
+  createdBy: string;         // The file owner who created this wrapped key
 }
 
 export interface Folder {

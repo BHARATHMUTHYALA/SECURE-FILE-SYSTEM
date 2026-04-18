@@ -18,17 +18,23 @@ export const config = {
     windowMs: 15 * 60 * 1000, // 15 minutes
     maxRequests: 100,
     maxLoginAttempts: 5,
-    lockoutDuration: 15 * 60 * 1000, // 15 minutes
+    lockoutDuration: 5 * 60 * 1000, // 5 minutes (for demonstration)
   },
   
   // Session settings
-  sessionDuration: '24h',
-  maxSessionsPerUser: 5,
+  sessionDuration: '720h', // 30 days (extended for long-term access)
+  maxSessionsPerUser: 10,  // Increased to support multiple devices over 30 days
   
   // File settings
   maxVersions: 10,
   trashRetentionDays: 30,
   shareLinksMaxDays: 30,
+
+  // Zero-trust settings
+  zeroTrust: {
+    proofTtlMs: 10 * 60 * 1000, // 10 minutes
+    maxClockSkewMs: 2 * 60 * 1000, // 2 minutes
+  },
   
   // Allowed file types with size limits
   allowedFileTypes: {

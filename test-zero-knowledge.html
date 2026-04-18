@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Zero-Knowledge Encryption Test</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 800px;
+      margin: 50px auto;
+      padding: 20px;
+      background: #1a1a2e;
+      color: #eee;
+    }
+    .test-section {
+      background: #16213e;
+      padding: 20px;
+      margin: 20px 0;
+      border-radius: 8px;
+      border: 1px solid #0f3460;
+    }
+    .success { color: #4ade80; }
+    .error { color: #f87171; }
+    .info { color: #60a5fa; }
+    button {
+      background: #6366f1;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 6px;
+      cursor: pointer;
+      margin: 5px;
+    }
+    button:hover { background: #4f46e5; }
+    pre {
+      background: #0f172a;
+      padding: 15px;
+      border-radius: 6px;
+      overflow-x: auto;
+    }
+    .status { font-weight: bold; margin: 10px 0; }
+  </style>
+</head>
+<body>
+  <h1>🔒 Zero-Knowledge Encryption Test Suite</h1>
+  <p class="info">This page tests if the client-side encryption is working correctly.</p>
+
+  <div class="test-section">
+    <h2>Test 1: Crypto Library Loaded</h2>
+    <div id="test1-result" class="status">Testing...</div>
+    <pre id="test1-details"></pre>
+  </div>
+
+  <div class="test-section">
+    <h2>Test 2: Encrypt/Decrypt Text</h2>
+    <button onclick="runTest2()">Run Test</button>
+    <div id="test2-result" class="status"></div>
+    <pre id="test2-details"></pre>
+  </div>
+
+  <div class="test-section">
+    <h2>Test 3: Encrypt/Decrypt File</h2>
+    <input type="file" id="test-file" accept="*/*">
+    <button onclick="runTest3()">Run Test</button>
+    <div id="test3-result" class="status"></div>
+    <pre id="test3-details"></pre>
+  </div>
+
+  <div class="test-section">
+    <h2>Test 4: Wrong Password</h2>
+    <button onclick="runTest4()">Run Test</button>
+    <div id="test4-result" class="status"></div>
+    <pre id="test4-details"></pre>
+  </div>
+
+  <div class="test-section">
+    <h2>Test 5: Performance Benchmark</h2>
+    <button onclick="runTest5()">Run Test</button>
+    <div id="test5-result" class="status"></div>
+    <pre id="test5-details"></pre>
+  </div>
+
+  <script src="/js/crypto-client.js"></script>
+  <script>
+    // Test 1: Check if crypto library is loaded
+    function runTest1() {
+      const result = document.getElementById('test1-result');
+      const details = document.getElementById('test1-details');
+      
+      try {
+        if (typeof clientCrypto === 'undefined') {
+          result.innerHTML = '<span class="error">❌ FAILED</span>';
+          details.textContent = 'Error: clientCrypto is not defined. Check if crypto-client.js is loaded.';
+          return;
+        }
+
+        if (typeof clientCrypto.encryptFile !== 'function') {
+          result.innerHTML = '<span class="error">❌ FAILED</span>';
+          details.textContent = 'Error: encryptFile method not found.';
+          return;
+        }
+
+        result.innerHTML = '<span class="success">✅ PASSED</span>';
+        details.textContent = 'ClientCrypto library loaded successfully!\n' +
+          'Available methods:\n' +
+          '- encryptFile()\n' +
+          '- decryptFile()\n' +
+          '- encryptMetadata()\n' +
+          '- decryptMetadata()\n' +
+          '- generatePassword()';
+      } catch (error) {
+        result.innerHTML = '<span class="error">❌ FAILED</span>';
+        details.textContent = 'Error: ' + error.message;
+      }
+    }
+
+    // Test 2: Encrypt and decrypt text
+    async function runTest2() {
+      const result = document.getElementById('test2-result');
+      const details = document.getElementById('test2-details');
+      result.innerHTML = 'Testing...';
+      details.textContent = '';
+
+      try {
+        const originalText = 'Hello, Zero-Knowledge World! 🔒';
+        const password = 'test-password-123';
+
+        details.textContent = 'Original text: ' + originalText + '\n';
+        details.textContent += 'Password: ' + password + '\n\n';
+
+        // Create a fake file from text
+        const blob = new Blob([originalText], { type: 'text/plain' });
+        const file = new File([blob], 'test.txt', { type: 'text/plain' });
+
+        details.textContent += 'Encrypting...\n';
+        const encrypted = await clientCrypto.encryptFile(file, password);
+        details.textContent += '✓ Encrypted successfully\n';
+        details.textContent += `  Salt: ${encrypted.salt.length} bytes\n`;
+        details.textContent += `  IV: ${encrypted.iv.length} bytes\n`;
+        details.textContent += `  Encrypted data: ${encrypted.encryptedData.byteLength} bytes\n\n`;
+
+        details.textContent += 'Decrypting...\n';
+        const decrypted = await clientCrypto.decryptFile(
+          encrypted.encryptedData,
+          password,
+          encrypted.salt,
+          encrypted.iv
+        );
+        
+        const decryptedText = new TextDecoder().decode(decrypted);
+        details.textContent += '✓ Decrypted successfully\n';
+        details.textContent += 'Decrypted text: ' + decryptedText + '\n\n';
+
+        if (decryptedText === originalText) {
+          result.innerHTML = '<span class="success">✅ PASSED</span>';
+          details.textContent += '✓ Text matches original!';
+        } else {
+          result.innerHTML = '<span class="error">❌ FAILED</span>';
+          details.textContent += '✗ Text does not match original!';
+        }
+      } catch (error) {
+        result.innerHTML = '<span class="error">❌ FAILED</span>';
+        details.textContent += '\nError: ' + error.message;
+      }
+    }
+
+    // Test 3: Encrypt and decrypt actual file
+    async function runTest3() {
+      const result = document.getElementById('test3-result');
+      const details = document.getElementById('test3-details');
+      const fileInput = document.getElementById('test-file');
+
+      if (!fileInput.files || fileInput.files.length === 0) {
+        result.innerHTML = '<span class="error">❌ FAILED</span>';
+        details.textContent = 'Please select a file first!';
+        return;
+      }
+
+      result.innerHTML = 'Testing...';
+      details.textContent = '';
+
+      try {
+        const file = fileInput.files[0];
+        const password = 'file-test-password-456';
+
+        details.textContent = `File: ${file.name}\n`;
+        details.textContent += `Size: ${file.size} bytes\n`;
+        details.textContent += `Type: ${file.type}\n`;
+        details.textContent += `Password: ${password}\n\n`;
+
+        // Read original file
+        const originalData = await file.arrayBuffer();
+        details.textContent += 'Original file read successfully\n\n';
+
+        // Encrypt
+        const startEncrypt = performance.now();
+        const encrypted = await clientCrypto.encryptFile(file, password);
+        const encryptTime = (performance.now() - startEncrypt).toFixed(2);
+        
+        details.textContent += `✓ Encrypted in ${encryptTime}ms\n`;
+        details.textContent += `  Encrypted size: ${encrypted.encryptedData.byteLength} bytes\n\n`;
+
+        // Decrypt
+        const startDecrypt = performance.now();
+        const decrypted = await clientCrypto.decryptFile(
+          encrypted.encryptedData,
+          password,
+          encrypted.salt,
+          encrypted.iv
+        );
+        const decryptTime = (performance.now() - startDecrypt).toFixed(2);
+        
+        details.textContent += `✓ Decrypted in ${decryptTime}ms\n`;
+        details.textContent += `  Decrypted size: ${decrypted.byteLength} bytes\n\n`;
+
+        // Compare
+        const original = new Uint8Array(originalData);
+        const decryptedArray = new Uint8Array(decrypted);
+        
+        if (original.length !== decryptedArray.length) {
+          result.innerHTML = '<span class="error">❌ FAILED</span>';
+          details.textContent += '✗ Size mismatch!';
+          return;
+        }
+
+        let matches = true;
+        for (let i = 0; i < original.length; i++) {
+          if (original[i] !== decryptedArray[i]) {
+            matches = false;
+            break;
+          }
+        }
+
+        if (matches) {
+          result.innerHTML = '<span class="success">✅ PASSED</span>';
+          details.textContent += '✓ File decrypted correctly!\n';
+          details.textContent += `✓ All ${original.length} bytes match!`;
+        } else {
+          result.innerHTML = '<span class="error">❌ FAILED</span>';
+          details.textContent += '✗ File data does not match!';
+        }
+      } catch (error) {
+        result.innerHTML = '<span class="error">❌ FAILED</span>';
+        details.textContent += '\nError: ' + error.message;
+      }
+    }
+
+    // Test 4: Wrong password should fail
+    async function runTest4() {
+      const result = document.getElementById('test4-result');
+      const details = document.getElementById('test4-details');
+      result.innerHTML = 'Testing...';
+      details.textContent = '';
+
+      try {
+        const originalText = 'Secret message';
+        const correctPassword = 'correct-password';
+        const wrongPassword = 'wrong-password';
+
+        const blob = new Blob([originalText], { type: 'text/plain' });
+        const file = new File([blob], 'test.txt', { type: 'text/plain' });
+
+        details.textContent = 'Encrypting with correct password...\n';
+        const encrypted = await clientCrypto.encryptFile(file, correctPassword);
+        details.textContent += '✓ Encrypted\n\n';
+
+        details.textContent += 'Attempting to decrypt with WRONG password...\n';
+        try {
+          await clientCrypto.decryptFile(
+            encrypted.encryptedData,
+            wrongPassword,
+            encrypted.salt,
+            encrypted.iv
+          );
+          
+          // If we get here, test FAILED (should have thrown error)
+          result.innerHTML = '<span class="error">❌ FAILED</span>';
+          details.textContent += '✗ Decryption succeeded with wrong password (should have failed)!';
+        } catch (decryptError) {
+          // This is expected!
+          result.innerHTML = '<span class="success">✅ PASSED</span>';
+          details.textContent += '✓ Decryption correctly failed with wrong password\n';
+          details.textContent += `✓ Error message: ${decryptError.message}`;
+        }
+      } catch (error) {
+        result.innerHTML = '<span class="error">❌ FAILED</span>';
+        details.textContent += '\nUnexpected error: ' + error.message;
+      }
+    }
+
+    // Test 5: Performance benchmark
+    async function runTest5() {
+      const result = document.getElementById('test5-result');
+      const details = document.getElementById('test5-details');
+      result.innerHTML = 'Testing...';
+      details.textContent = 'Running performance benchmarks...\n\n';
+
+      try {
+        const sizes = [1024, 10240, 102400, 1048576]; // 1KB, 10KB, 100KB, 1MB
+        const password = 'benchmark-password';
+
+        for (const size of sizes) {
+          // Create test data
+          const data = new Uint8Array(size);
+          crypto.getRandomValues(data);
+          const blob = new Blob([data], { type: 'application/octet-stream' });
+          const file = new File([blob], 'test.bin', { type: 'application/octet-stream' });
+
+          // Encrypt
+          const startEncrypt = performance.now();
+          const encrypted = await clientCrypto.encryptFile(file, password);
+          const encryptTime = (performance.now() - startEncrypt).toFixed(2);
+
+          // Decrypt
+          const startDecrypt = performance.now();
+          await clientCrypto.decryptFile(
+            encrypted.encryptedData,
+            password,
+            encrypted.salt,
+            encrypted.iv
+          );
+          const decryptTime = (performance.now() - startDecrypt).toFixed(2);
+
+          const sizeLabel = size < 1024 ? `${size}B` : 
+                           size < 1048576 ? `${(size/1024).toFixed(0)}KB` : 
+                           `${(size/1048576).toFixed(1)}MB`;
+
+          details.textContent += `${sizeLabel.padEnd(8)} | Encrypt: ${encryptTime.padStart(8)}ms | Decrypt: ${decryptTime.padStart(8)}ms\n`;
+        }
+
+        result.innerHTML = '<span class="success">✅ PASSED</span>';
+        details.textContent += '\n✓ All benchmarks completed successfully!';
+      } catch (error) {
+        result.innerHTML = '<span class="error">❌ FAILED</span>';
+        details.textContent += '\nError: ' + error.message;
+      }
+    }
+
+    // Run Test 1 automatically on load
+    window.addEventListener('load', () => {
+      runTest1();
+    });
+  </script>
+</body>
+</html>

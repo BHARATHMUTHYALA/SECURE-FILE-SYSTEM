@@ -1,7 +1,8 @@
 import { 
   User, FileRecord, AuditLog, Role, FileStatus, 
   Folder, FileVersion, Notification, NotificationType, Session, Tag, ActivityFeed, ActivityType,
-  RateLimitEntry, Category, FileAnnotation, Bookmark, FileTemplate, SavedFilter, SecurityEvent, SecurityEventType, ShareLink
+  RateLimitEntry, Category, FileAnnotation, Bookmark, FileTemplate, SavedFilter, SecurityEvent, SecurityEventType, ShareLink,
+  UserKeyPair, FileSignature, EncryptionAudit, EncryptionAlgorithmType, WrappedKey
 } from './types';
 import bcrypt from 'bcryptjs';
 import { v4 as uuid } from 'uuid';
@@ -25,6 +26,10 @@ interface DBData {
   templates: [string, FileTemplate][];
   savedFilters: [string, SavedFilter][];
   shareLinks: [string, ShareLink][];
+  keyPairs: [string, UserKeyPair][];
+  fileSignatures: [string, FileSignature][];
+  wrappedKeys: [string, WrappedKey][];
+  encryptionAudits: EncryptionAudit[];
   securityEvents: SecurityEvent[];
   activities: ActivityFeed[];
   logs: AuditLog[];
@@ -44,6 +49,10 @@ class DB {
   templates = new Map<string, FileTemplate>();
   savedFilters = new Map<string, SavedFilter>();
   shareLinks = new Map<string, ShareLink>();
+  keyPairs = new Map<string, UserKeyPair>();
+  fileSignatures = new Map<string, FileSignature>();
+  wrappedKeys = new Map<string, WrappedKey>();
+  encryptionAudits: EncryptionAudit[] = [];
   securityEvents: SecurityEvent[] = [];
   activities: ActivityFeed[] = [];
   logs: AuditLog[] = [];
@@ -82,6 +91,10 @@ class DB {
         this.templates = new Map(data.templates || []);
         this.savedFilters = new Map(data.savedFilters || []);
         this.shareLinks = new Map(data.shareLinks || []);
+        this.keyPairs = new Map(data.keyPairs || []);
+        this.fileSignatures = new Map(data.fileSignatures || []);
+        this.wrappedKeys = new Map(data.wrappedKeys || []);
+        this.encryptionAudits = data.encryptionAudits || [];
         this.securityEvents = data.securityEvents || [];
         this.activities = data.activities || [];
         this.logs = data.logs || [];
@@ -114,14 +127,70 @@ class DB {
         templates: [...this.templates.entries()],
         savedFilters: [...this.savedFilters.entries()],
         shareLinks: [...this.shareLinks.entries()],
+        keyPairs: [...this.keyPairs.entries()],
+        fileSignatures: [...this.fileSignatures.entries()],
+        wrappedKeys: [...this.wrappedKeys.entries()],
+        encryptionAudits: this.encryptionAudits,
         securityEvents: this.securityEvents,
         activities: this.activities,
         logs: this.logs,
       };
       
-      fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
+      // CRITICAL FIX: Atomic write - write to temp file then rename
+      const tempFile = DB_FILE + '.tmp';
+      const backupFile = DB_FILE + '.backup';
+      
+      // Create backup of existing database
+      if (fs.existsSync(DB_FILE)) {
+        fs.copyFileSync(DB_FILE, backupFile);
+      }
+      
+      // Write to temp file
+      fs.writeFileSync(tempFile, JSON.stringify(data, null, 2));
+      
+      // Windows-safe atomic replace
+      if (process.platform === 'win32') {
+        // On Windows, delete target first to avoid EPERM
+        if (fs.existsSync(DB_FILE)) {
+          try {
+            fs.unlinkSync(DB_FILE);
+          } catch (unlinkErr) {
+            // If delete fails, wait and retry
+            console.warn('[WARNING] Retrying database save...');
+            setTimeout(() => {
+              try {
+                fs.unlinkSync(DB_FILE);
+              } catch (e) {
+                // Ignore - will try rename anyway
+              }
+            }, 100);
+          }
+        }
+      }
+      
+      // Atomic rename
+      fs.renameSync(tempFile, DB_FILE);
+      
+      // Clean up old backup (keep only latest)
+      const oldBackup = DB_FILE + '.backup.old';
+      if (fs.existsSync(oldBackup)) {
+        fs.unlinkSync(oldBackup);
+      }
+      if (fs.existsSync(backupFile)) {
+        fs.renameSync(backupFile, oldBackup);
+      }
     } catch (err) {
-      console.error('Failed to save database to disk:', err);
+      console.error('[CRITICAL] Failed to save database to disk:', err);
+      // Try to restore from backup
+      const backupFile = DB_FILE + '.backup';
+      if (fs.existsSync(backupFile)) {
+        try {
+          fs.copyFileSync(backupFile, DB_FILE);
+          console.log('[RECOVERY] Database restored from backup');
+        } catch (restoreErr) {
+          console.error('[CRITICAL] Failed to restore database from backup:', restoreErr);
+        }
+      }
     }
   }
 
@@ -177,10 +246,10 @@ class DB {
   }
 
   private startCleanupJob() {
-    // Clean up expired items every hour
+    // BUG FIX 18: Clean up expired items every 5 minutes (was hourly)
     setInterval(() => {
       this.cleanupExpiredItems();
-    }, 60 * 60 * 1000);
+    }, 5 * 60 * 1000); // 5 minutes
   }
 
   private cleanupExpiredItems() {
@@ -894,6 +963,148 @@ class DB {
       recentActivity,
       unreadNotifications: this.getUnreadCount(userId),
     };
+  };
+
+  // ============ KEY PAIR MANAGEMENT ============
+  
+  createKeyPair = (keyPair: UserKeyPair) => {
+    this.keyPairs.set(keyPair.id, keyPair);
+    this.saveToDisk();
+  };
+  
+  getKeyPairById = (id: string): UserKeyPair | undefined => {
+    return this.keyPairs.get(id);
+  };
+  
+  getKeyPairsByUser = (userId: string): UserKeyPair[] => {
+    return [...this.keyPairs.values()].filter(kp => kp.userId === userId);
+  };
+  
+  updateKeyPair = (id: string, updates: Partial<UserKeyPair>) => {
+    const keyPair = this.keyPairs.get(id);
+    if (keyPair) {
+      Object.assign(keyPair, updates);
+      this.saveToDisk();
+    }
+  };
+  
+  deleteKeyPair = (id: string) => {
+    this.keyPairs.delete(id);
+    this.saveToDisk();
+  };
+  
+  setDefaultKeyPair = (userId: string, keyPairId: string) => {
+    // Clear existing defaults for this user
+    for (const [id, kp] of this.keyPairs) {
+      if (kp.userId === userId && kp.isDefault) {
+        kp.isDefault = false;
+      }
+    }
+    // Set new default
+    const keyPair = this.keyPairs.get(keyPairId);
+    if (keyPair) {
+      keyPair.isDefault = true;
+    }
+    this.saveToDisk();
+  };
+  
+  getDefaultKeyPair = (userId: string, type?: string): UserKeyPair | undefined => {
+    const keyPairs = this.getKeyPairsByUser(userId);
+    return keyPairs.find(kp => kp.isDefault && (!type || kp.type === type)) || keyPairs[0];
+  };
+
+  // ============ FILE SIGNATURES ============
+  
+  createFileSignature = (signature: FileSignature) => {
+    this.fileSignatures.set(signature.id, signature);
+    this.saveToDisk();
+  };
+  
+  getFileSignature = (id: string): FileSignature | undefined => {
+    return this.fileSignatures.get(id);
+  };
+  
+  getSignaturesByFile = (fileId: string): FileSignature[] => {
+    return [...this.fileSignatures.values()].filter(s => s.fileId === fileId);
+  };
+  
+  updateFileSignature = (id: string, updates: Partial<FileSignature>) => {
+    const sig = this.fileSignatures.get(id);
+    if (sig) {
+      Object.assign(sig, updates);
+      this.saveToDisk();
+    }
+  };
+  
+  deleteFileSignature = (id: string) => {
+    this.fileSignatures.delete(id);
+    this.saveToDisk();
+  };
+
+  // ============ ENCRYPTION AUDIT ============
+  
+  logEncryptionAudit = (audit: EncryptionAudit) => {
+    this.encryptionAudits.push(audit);
+    // Keep only last 10000 audit entries
+    if (this.encryptionAudits.length > 10000) {
+      this.encryptionAudits = this.encryptionAudits.slice(-10000);
+    }
+    this.saveToDisk();
+  };
+  
+  getEncryptionAudits = (fileId: string): EncryptionAudit[] => {
+    return this.encryptionAudits
+      .filter(a => a.fileId === fileId)
+      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+  };
+  
+  getEncryptionAuditsByUser = (userId: string, limit = 50): EncryptionAudit[] => {
+    return this.encryptionAudits
+      .filter(a => a.userId === userId)
+      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+      .slice(0, limit);
+  };
+  
+  getRecentEncryptionAudits = (limit = 100): EncryptionAudit[] => {
+    return this.encryptionAudits
+      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+      .slice(0, limit);
+  };
+
+  // ============ WRAPPED KEYS ============
+  
+  createWrappedKey = (wrappedKey: WrappedKey): WrappedKey => {
+    this.wrappedKeys.set(wrappedKey.id, wrappedKey);
+    this.saveToDisk();
+    return wrappedKey;
+  };
+  
+  getWrappedKey = (fileId: string, userId: string): WrappedKey | undefined => {
+    return [...this.wrappedKeys.values()].find(
+      wk => wk.fileId === fileId && wk.userId === userId
+    );
+  };
+  
+  getWrappedKeysByFile = (fileId: string): WrappedKey[] => {
+    return [...this.wrappedKeys.values()].filter(wk => wk.fileId === fileId);
+  };
+  
+  deleteWrappedKeysByFile = (fileId: string): void => {
+    for (const [id, wk] of this.wrappedKeys) {
+      if (wk.fileId === fileId) {
+        this.wrappedKeys.delete(id);
+      }
+    }
+    this.saveToDisk();
+  };
+  
+  deleteWrappedKeysByUser = (fileId: string, userId: string): void => {
+    for (const [id, wk] of this.wrappedKeys) {
+      if (wk.fileId === fileId && wk.userId === userId) {
+        this.wrappedKeys.delete(id);
+      }
+    }
+    this.saveToDisk();
   };
 }
 

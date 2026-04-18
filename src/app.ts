@@ -4,6 +4,7 @@ import path from 'path';
 import { config } from './config';
 import routes from './routes';
 import { errorHandler, securityHeaders, requestLogger, corsOptions } from './middleware';
+import { globalRateLimiter } from './rate-limiter';
 
 const app = express();
 
@@ -11,6 +12,10 @@ const app = express();
 app.use(securityHeaders);
 app.use(requestLogger);
 app.use(cors(corsOptions));
+
+// Feature 2: Global rate limiting
+app.use(globalRateLimiter.middleware());
+
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(express.static(path.join(process.cwd(), 'public')));
@@ -25,6 +30,11 @@ app.get('/api', (_, res) => {
     version: '2.0.0',
     features: [
       'AES-256-GCM encryption',
+      'Zero-trust attestation proofs (session/IP/device bound)',
+      'Asymmetric secure sharing (RSA-OAEP key wrapping)',
+      'Two-Factor Authentication (TOTP)',
+      'Global rate limiting with IP blocking',
+      'Enhanced password validation',
       'Role-based access control',
       'File sharing & share links',
       'File versioning',

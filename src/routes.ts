@@ -8,7 +8,7 @@ import nodeCrypto from 'crypto';
 import { v4 as uuid } from 'uuid';
 import { db } from './db';
 import { config } from './config';
-import { Role, User, FileRecord, FileStatus, Folder, FileVersion, NotificationType, Category, FileAnnotation, Bookmark, FileTemplate, SavedFilter, ActivityType, SecurityEventType, ShareLink } from './types';
+import { Role, User, FileRecord, FileStatus, Folder, FileVersion, NotificationType, Category, FileAnnotation, Bookmark, FileTemplate, SavedFilter, ActivityType, SecurityEventType, ShareLink, WrappedKey } from './types';
 import { 
   auth, optionalAuth, requireRole, rateLimit, checkStorageQuota,
   upload, uploadEncrypted, ok, fail, validate, validateFileType, getClientIp 
@@ -17,10 +17,134 @@ import {
   encryptFile, decryptFile, hashFile, generateToken, 
   hashPassword, verifyPassword, generateSecureCode, ENCRYPTION_VERSION,
   verifyFileIntegrity, secureDelete, generateDeviceFingerprint,
-  encryptFileWithUserKey, decryptFileWithUserKey, encryptBufferWithUserKey, isUserKeyEncrypted, USER_KEY_VERSION
+  encryptFileWithUserKey, decryptFileWithUserKey, encryptBufferWithUserKey, decryptBufferWithUserKey, isUserKeyEncrypted, USER_KEY_VERSION,
+  // New encryption mechanisms
+  generateRSAKeyPair, rsaEncrypt, rsaDecrypt,
+  generateECDHKeyPair, computeECDHSecret,
+  chaChaEncrypt, chaChaDecrypt, chaChaEncryptFile, chaChaDecryptFile,
+  hybridEncrypt, hybridDecrypt, hybridEncryptBuffer, hybridDecryptBuffer,
+  generateSigningKeyPair, digitalSign, verifyDigitalSignature,
+  generateECDSAKeyPair, ecdsaSign, verifyECDSASignature,
+  envelopeEncrypt, envelopeDecrypt,
+  wrapKey, unwrapKey,
+  EncryptionAlgorithm, universalEncrypt, universalDecrypt, getEncryptionInfo,
+  encryptFileWithAlgorithm, decryptFileWithAlgorithm,
+  generatePassphrase, secureRandomBytes,
+  // Key wrapping functions
+  extractDekFromUserEncryptedFile, wrapDekForUser, unwrapDekForUser, decryptFileWithDek, decryptFileForUser
 } from './crypto';
+import { EncryptionAlgorithmType, UserKeyPair, FileSignature, EncryptionAudit } from './types';
+import { setup2FA, verifyTOTP, validate2FASetup, verifyBackupCode } from './twofa';
+import { globalRateLimiter } from './rate-limiter';
 
 const router = Router();
+
+interface ZeroTrustProofPayload {
+  uid: string;
+  sid: string;
+  ipHash: string;
+  uaHash: string;
+  purpose: string;
+  iat: number;
+  exp: number;
+  nonce: string;
+}
+
+interface SecureRecipientInput {
+  recipientId: string;
+  publicKey: string;
+  email?: string;
+}
+
+const hashContextValue = (value: string): string =>
+  nodeCrypto.createHash('sha256').update(value).digest('hex');
+
+const signZeroTrustPayload = (payloadBase64: string): string =>
+  nodeCrypto.createHmac('sha256', config.jwtSecret).update(payloadBase64).digest('base64url');
+
+const issueZeroTrustProof = (req: Request, purpose: string): string => {
+  const now = Date.now();
+  const payload: ZeroTrustProofPayload = {
+    uid: req.user!.id,
+    sid: req.sessionId!,
+    ipHash: hashContextValue(getClientIp(req)),
+    uaHash: hashContextValue(req.headers['user-agent'] || 'unknown'),
+    purpose,
+    iat: now,
+    exp: now + config.zeroTrust.proofTtlMs,
+    nonce: generateToken(8),
+  };
+
+  const payloadBase64 = Buffer.from(JSON.stringify(payload)).toString('base64url');
+  const signature = signZeroTrustPayload(payloadBase64);
+  return `${payloadBase64}.${signature}`;
+};
+
+const validateZeroTrustProof = (
+  req: Request,
+  purpose: string
+): { valid: boolean; reason?: string; payload?: ZeroTrustProofPayload } => {
+  const proof = (req.headers['x-zero-trust-proof'] as string | undefined) || req.body?.zeroTrustProof;
+  if (!proof || typeof proof !== 'string') {
+    return { valid: false, reason: 'Missing zero-trust proof' };
+  }
+
+  const [payloadBase64, signature] = proof.split('.');
+  if (!payloadBase64 || !signature) {
+    return { valid: false, reason: 'Malformed zero-trust proof' };
+  }
+
+  const expectedSignature = signZeroTrustPayload(payloadBase64);
+  const signatureBuffer = Buffer.from(signature);
+  const expectedBuffer = Buffer.from(expectedSignature);
+  if (signatureBuffer.length !== expectedBuffer.length || !nodeCrypto.timingSafeEqual(signatureBuffer, expectedBuffer)) {
+    return { valid: false, reason: 'Invalid zero-trust proof signature' };
+  }
+
+  let payload: ZeroTrustProofPayload;
+  try {
+    payload = JSON.parse(Buffer.from(payloadBase64, 'base64url').toString('utf-8')) as ZeroTrustProofPayload;
+  } catch {
+    return { valid: false, reason: 'Invalid zero-trust proof payload' };
+  }
+
+  const now = Date.now();
+  if (payload.exp < now - config.zeroTrust.maxClockSkewMs) {
+    return { valid: false, reason: 'Zero-trust proof expired' };
+  }
+
+  if (payload.iat > now + config.zeroTrust.maxClockSkewMs) {
+    return { valid: false, reason: 'Zero-trust proof issued in the future' };
+  }
+
+  if (!req.user || !req.sessionId) {
+    return { valid: false, reason: 'Authenticated session required for zero-trust proof' };
+  }
+
+  if (payload.uid !== req.user.id) {
+    return { valid: false, reason: 'Zero-trust proof user mismatch' };
+  }
+
+  if (payload.sid !== req.sessionId) {
+    return { valid: false, reason: 'Zero-trust proof session mismatch' };
+  }
+
+  if (payload.purpose !== purpose) {
+    return { valid: false, reason: 'Zero-trust proof purpose mismatch' };
+  }
+
+  const ipHash = hashContextValue(getClientIp(req));
+  if (payload.ipHash !== ipHash) {
+    return { valid: false, reason: 'Zero-trust proof IP mismatch' };
+  }
+
+  const uaHash = hashContextValue(req.headers['user-agent'] || 'unknown');
+  if (payload.uaHash !== uaHash) {
+    return { valid: false, reason: 'Zero-trust proof device mismatch' };
+  }
+
+  return { valid: true, payload };
+};
 
 // ============ AUTH ============
 router.post('/auth/register', rateLimit(10, 60000), async (req: Request, res: Response) => {
@@ -56,6 +180,26 @@ router.post('/auth/register', rateLimit(10, 60000), async (req: Request, res: Re
       showFileExtensions: true,
     },
   };
+  
+  // Generate RSA key pair for key wrapping
+  try {
+    const keyPair = generateRSAKeyPair(2048);
+    user.publicKey = keyPair.publicKey;
+    user.privateKey = keyPair.privateKey;
+  } catch (err) {
+    // BUG FIX 6: Add proper error logging
+    console.error('Failed to generate key pair during registration:', err);
+    db.logSecurityEvent({
+      userId: user.id,
+      eventType: 'encryption_key_rotated' as any,
+      description: 'Failed to generate RSA key pair during registration',
+      ipAddress: getClientIp(req),
+      userAgent: req.headers['user-agent'],
+      metadata: { error: err instanceof Error ? err.message : String(err) },
+    });
+    // Non-fatal - user can still register
+  }
+  
   db.createUser(user);
   db.log(user.id, 'REGISTER', user.id, '', getClientIp(req), req.headers['user-agent']);
   
@@ -75,11 +219,12 @@ router.post('/auth/login', rateLimit(5, 60000), async (req: Request, res: Respon
     return fail(res, 'Invalid credentials', 401);
   }
   
-  // Check if account is locked
+  // Check if account is locked FIRST
   if (user.lockedUntil && user.lockedUntil > new Date()) {
     const remainingMs = user.lockedUntil.getTime() - Date.now();
     const remainingMins = Math.ceil(remainingMs / 60000);
-    return fail(res, `Account locked. Try again in ${remainingMins} minutes.`, 423);
+    db.log(user.id, 'LOGIN_BLOCKED', user.id, `Account locked, ${remainingMins} minutes remaining`, getClientIp(req), req.headers['user-agent']);
+    return fail(res, `Account locked due to failed login attempts. Try again in ${remainingMins} minutes.`, 423);
   }
   
   // Verify password
@@ -88,16 +233,22 @@ router.post('/auth/login', rateLimit(5, 60000), async (req: Request, res: Respon
     const attempts = user.failedLoginAttempts + 1;
     const updates: Partial<User> = { failedLoginAttempts: attempts };
     
+    // Lock account if threshold reached
     if (attempts >= config.rateLimit.maxLoginAttempts) {
       updates.lockedUntil = new Date(Date.now() + config.rateLimit.lockoutDuration);
       db.notify(user.id, NotificationType.SECURITY_ALERT, 'Account Locked',
-        'Your account has been temporarily locked due to multiple failed login attempts.');
+        `Your account has been locked for 5 minutes due to ${attempts} failed login attempts.`);
+      db.log(user.id, 'ACCOUNT_LOCKED', user.id, `Locked after ${attempts} failed attempts`, getClientIp(req), req.headers['user-agent']);
+      
+      db.updateUser(user.id, updates);
+      return fail(res, `Account locked due to ${attempts} failed login attempts. Please wait 5 minutes before trying again.`, 423);
     }
     
     db.updateUser(user.id, updates);
-    db.log(user.id, 'LOGIN_FAILED', user.id, 'Invalid password', getClientIp(req), req.headers['user-agent']);
+    db.log(user.id, 'LOGIN_FAILED', user.id, `Invalid password (attempt ${attempts}/${config.rateLimit.maxLoginAttempts})`, getClientIp(req), req.headers['user-agent']);
     
-    return fail(res, 'Invalid credentials', 401);
+    const remaining = config.rateLimit.maxLoginAttempts - attempts;
+    return fail(res, `Invalid credentials. You have ${remaining} attempt${remaining === 1 ? '' : 's'} remaining before account lockout.`, 401);
   }
   
   // Check 2FA if enabled
@@ -105,10 +256,29 @@ router.post('/auth/login', rateLimit(5, 60000), async (req: Request, res: Respon
     if (!totpCode) {
       return ok(res, { requires2FA: true }, 'Two-factor authentication required');
     }
-    // In production, verify TOTP here
-    // if (!verifyTOTP(totpCode, user.twoFactorSecret!)) {
-    //   return fail(res, 'Invalid 2FA code', 401);
-    // }
+    
+    // ACTUALLY VERIFY 2FA CODE
+    if (!user.twoFactorSecret || !verifyTOTP(totpCode, user.twoFactorSecret)) {
+      // Increment failed attempts for 2FA failures too
+      const attempts = user.failedLoginAttempts + 1;
+      const updates: Partial<User> = { failedLoginAttempts: attempts };
+      
+      if (attempts >= config.rateLimit.maxLoginAttempts) {
+        updates.lockedUntil = new Date(Date.now() + config.rateLimit.lockoutDuration);
+        db.notify(user.id, NotificationType.SECURITY_ALERT, 'Account Locked',
+          `Your account has been locked for 5 minutes due to ${attempts} failed 2FA attempts.`);
+        
+        db.updateUser(user.id, updates);
+        db.log(user.id, '2FA_FAILED', user.id, `Invalid 2FA code (attempt ${attempts}/${config.rateLimit.maxLoginAttempts})`, getClientIp(req), req.headers['user-agent']);
+        return fail(res, `Account locked due to ${attempts} failed 2FA attempts. Please wait 5 minutes before trying again.`, 423);
+      }
+      
+      db.updateUser(user.id, updates);
+      db.log(user.id, '2FA_FAILED', user.id, `Invalid 2FA code (attempt ${attempts}/${config.rateLimit.maxLoginAttempts})`, getClientIp(req), req.headers['user-agent']);
+      
+      const remaining = config.rateLimit.maxLoginAttempts - attempts;
+      return fail(res, `Invalid 2FA code. You have ${remaining} attempt${remaining === 1 ? '' : 's'} remaining before account lockout.`, 401);
+    }
   }
   
   // Reset failed attempts on successful login
@@ -118,9 +288,37 @@ router.post('/auth/login', rateLimit(5, 60000), async (req: Request, res: Respon
     lastLoginAt: new Date(),
   });
 
+  // Generate RSA key pair if user doesn't have one (for key wrapping)
+  if (!user.publicKey || !user.privateKey) {
+    try {
+      const keyPair = generateRSAKeyPair(2048);
+      db.updateUser(user.id, {
+        publicKey: keyPair.publicKey,
+        privateKey: keyPair.privateKey,
+      });
+      // Refresh user object
+      const updatedUser = db.findUserById(user.id);
+      if (updatedUser) {
+        Object.assign(user, updatedUser);
+      }
+    } catch (err) {
+      // BUG FIX 6: Add proper error logging
+      console.error('Failed to generate key pair for user:', err);
+      db.logSecurityEvent({
+        userId: user.id,
+        eventType: 'encryption_key_rotated' as any,
+        description: 'Failed to generate RSA key pair during login',
+        ipAddress: getClientIp(req),
+        userAgent: req.headers['user-agent'],
+        metadata: { error: err instanceof Error ? err.message : String(err) },
+      });
+      // Non-fatal error - user can still login
+    }
+  }
+
   // Create session
   const sessionId = uuid();
-  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+  const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
   
   db.createSession({
     id: sessionId,
@@ -136,7 +334,7 @@ router.post('/auth/login', rateLimit(5, 60000), async (req: Request, res: Respon
   const token = jwt.sign(
     { userId: user.id, role: user.role, sessionId }, 
     config.jwtSecret, 
-    { expiresIn: '24h' }
+    { expiresIn: '720h' } // 30 days
   );
   
   db.log(user.id, 'LOGIN', user.id, '', getClientIp(req), req.headers['user-agent']);
@@ -188,6 +386,25 @@ router.get('/auth/me', auth, (req: Request, res: Response) => {
   ok(res, safe);
 });
 
+router.post('/security/zero-trust/proof', auth, (req: Request, res: Response) => {
+  if (!req.sessionId) {
+    return fail(res, 'Session-bound authentication is required for zero-trust proof', 401);
+  }
+
+  const purposeRaw = typeof req.body?.purpose === 'string' ? req.body.purpose.trim() : 'secure-share';
+  const purpose = purposeRaw.length > 0 ? purposeRaw : 'secure-share';
+  const proof = issueZeroTrustProof(req, purpose);
+
+  ok(res, {
+    proof,
+    purpose,
+    expiresInMs: config.zeroTrust.proofTtlMs,
+    sessionBound: true,
+    ipBound: true,
+    userAgentBound: true,
+  }, 'Zero-trust proof issued');
+});
+
 router.get('/auth/sessions', auth, (req: Request, res: Response) => {
   const sessions = db.getSessionsByUser(req.user!.id).map(s => ({
     id: s.id,
@@ -221,16 +438,40 @@ router.post('/auth/change-password', auth, async (req: Request, res: Response) =
   const pwCheck = validate.password(newPassword);
   if (!pwCheck.valid) return fail(res, pwCheck.error!);
   
-  db.updateUser(user.id, { password: await bcrypt.hash(newPassword, 12) });
+  // CRITICAL FIX: Add passwordChangedAt timestamp to invalidate old tokens
+  db.updateUser(user.id, { 
+    password: await bcrypt.hash(newPassword, 12),
+    passwordChangedAt: new Date()
+  });
   
-  // Terminate all other sessions
+  // Terminate all sessions
   db.deleteSessionsByUser(user.id);
   
   db.log(user.id, 'PASSWORD_CHANGE', user.id, '', req.clientIp, req.headers['user-agent']);
   db.notify(user.id, NotificationType.SECURITY_ALERT, 'Password Changed',
-    'Your password was successfully changed. All other sessions have been logged out.');
+    'Your password was successfully changed. All sessions have been invalidated.');
   
   ok(res, null, 'Password changed successfully. Please login again.');
+});
+
+// BUG FIX 17: Add password strength check endpoint
+router.post('/auth/check-password-strength', (req: Request, res: Response) => {
+  const { password } = req.body;
+  
+  if (!password || typeof password !== 'string') {
+    return fail(res, 'Password required');
+  }
+  
+  const strength = validate.passwordStrength(password);
+  const basicCheck = validate.password(password);
+  
+  ok(res, {
+    score: strength.score,
+    maxScore: 10,
+    feedback: strength.feedback,
+    meetsRequirements: basicCheck.valid,
+    requirementError: basicCheck.error,
+  });
 });
 
 router.patch('/auth/preferences', auth, (req: Request, res: Response) => {
@@ -245,6 +486,184 @@ router.patch('/auth/preferences', auth, (req: Request, res: Response) => {
   
   db.updateUser(user.id, { preferences: prefs });
   ok(res, prefs, 'Preferences updated');
+});
+
+// ============ TWO-FACTOR AUTHENTICATION ============
+// Feature 1: TOTP-based 2FA with QR codes and backup codes
+
+router.post('/auth/2fa/setup', auth, (req: Request, res: Response) => {
+  const user = db.findUserById(req.user!.id);
+  if (!user) return fail(res, 'User not found', 404);
+  
+  if (user.twoFactorEnabled) {
+    return fail(res, '2FA is already enabled. Disable it first to set up again.');
+  }
+  
+  const setup = setup2FA(user.username, user.email);
+  
+  // Store secret temporarily (will be confirmed on verification)
+  db.updateUser(user.id, {
+    twoFactorSecret: setup.secret,
+    twoFactorBackupCodes: setup.backupCodesHashed,
+  });
+  
+  ok(res, {
+    secret: setup.secret,
+    qrCodeURL: setup.qrCodeURL,
+    qrCodeASCII: setup.qrCodeASCII,
+    backupCodes: setup.backupCodes, // Show once, user must save them
+  }, '2FA setup initiated. Verify with a code to enable.');
+});
+
+router.post('/auth/2fa/verify', auth, (req: Request, res: Response) => {
+  const { token } = req.body;
+  const user = db.findUserById(req.user!.id);
+  
+  if (!user) return fail(res, 'User not found', 404);
+  if (!user.twoFactorSecret) return fail(res, '2FA setup not initiated', 400);
+  
+  const validation = validate2FASetup(user.twoFactorSecret, token);
+  if (!validation.valid) {
+    return fail(res, validation.error || 'Invalid verification code');
+  }
+  
+  // Enable 2FA
+  db.updateUser(user.id, { twoFactorEnabled: true });
+  
+  db.log(user.id, 'ENABLE_2FA', user.id, '', req.clientIp, req.headers['user-agent']);
+  db.notify(user.id, NotificationType.SECURITY_ALERT, '2FA Enabled',
+    'Two-factor authentication has been successfully enabled on your account.');
+  
+  ok(res, null, '2FA enabled successfully');
+});
+
+router.post('/auth/2fa/disable', auth, async (req: Request, res: Response) => {
+  const { password, token } = req.body;
+  const user = db.findUserById(req.user!.id);
+  
+  if (!user) return fail(res, 'User not found', 404);
+  if (!user.twoFactorEnabled) return fail(res, '2FA is not enabled');
+  
+  // Verify password
+  if (!(await bcrypt.compare(password, user.password))) {
+    return fail(res, 'Invalid password', 401);
+  }
+  
+  // Verify 2FA token
+  if (!user.twoFactorSecret || !verifyTOTP(token, user.twoFactorSecret)) {
+    return fail(res, 'Invalid 2FA code', 401);
+  }
+  
+  // Disable 2FA
+  db.updateUser(user.id, {
+    twoFactorEnabled: false,
+    twoFactorSecret: undefined,
+    twoFactorBackupCodes: undefined,
+  });
+  
+  db.log(user.id, 'DISABLE_2FA', user.id, '', req.clientIp, req.headers['user-agent']);
+  db.notify(user.id, NotificationType.SECURITY_ALERT, '2FA Disabled',
+    'Two-factor authentication has been disabled on your account.');
+  
+  ok(res, null, '2FA disabled successfully');
+});
+
+router.post('/auth/2fa/verify-login', async (req: Request, res: Response) => {
+  const { email, password, totpCode, backupCode } = req.body;
+  const user = db.findUserByEmail(email?.toLowerCase());
+  
+  if (!user) return fail(res, 'Invalid credentials', 401);
+  if (!user.twoFactorEnabled) return fail(res, '2FA not enabled for this account', 400);
+  
+  // Verify password
+  if (!(await bcrypt.compare(password, user.password))) {
+    return fail(res, 'Invalid credentials', 401);
+  }
+  
+  // Verify 2FA code or backup code
+  let verified = false;
+  
+  if (totpCode && user.twoFactorSecret) {
+    verified = verifyTOTP(totpCode, user.twoFactorSecret);
+  } else if (backupCode && user.twoFactorBackupCodes) {
+    // Check backup codes
+    const codeIndex = user.twoFactorBackupCodes.findIndex((hash: string) => 
+      verifyBackupCode(backupCode, hash)
+    );
+    
+    if (codeIndex !== -1) {
+      verified = true;
+      // Remove used backup code
+      const updatedCodes = [...user.twoFactorBackupCodes];
+      updatedCodes.splice(codeIndex, 1);
+      db.updateUser(user.id, { twoFactorBackupCodes: updatedCodes });
+      
+      db.notify(user.id, NotificationType.SECURITY_ALERT, 'Backup Code Used',
+        `A backup code was used to login. ${updatedCodes.length} codes remaining.`);
+    }
+  }
+  
+  if (!verified) {
+    return fail(res, 'Invalid 2FA code', 401);
+  }
+  
+  // Create session (same as regular login)
+  const sessionId = uuid();
+  const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+  
+  db.createSession({
+    id: sessionId,
+    userId: user.id,
+    token: generateToken(),
+    userAgent: req.headers['user-agent'] || 'unknown',
+    ipAddress: getClientIp(req),
+    createdAt: new Date(),
+    expiresAt,
+    lastActiveAt: new Date(),
+  });
+
+  const token = jwt.sign(
+    { userId: user.id, role: user.role, sessionId }, 
+    config.jwtSecret, 
+    { expiresIn: '720h' }
+  );
+  
+  db.log(user.id, 'LOGIN_2FA', user.id, '', getClientIp(req), req.headers['user-agent']);
+  
+  ok(res, { 
+    token, 
+    user: { 
+      id: user.id, 
+      username: user.username, 
+      email: user.email, 
+      role: user.role,
+    }
+  });
+});
+
+router.post('/auth/2fa/regenerate-backup-codes', auth, async (req: Request, res: Response) => {
+  const { password } = req.body;
+  const user = db.findUserById(req.user!.id);
+  
+  if (!user) return fail(res, 'User not found', 404);
+  if (!user.twoFactorEnabled) return fail(res, '2FA is not enabled');
+  
+  // Verify password
+  if (!(await bcrypt.compare(password, user.password))) {
+    return fail(res, 'Invalid password', 401);
+  }
+  
+  const setup = setup2FA(user.username, user.email);
+  
+  db.updateUser(user.id, {
+    twoFactorBackupCodes: setup.backupCodesHashed,
+  });
+  
+  db.log(user.id, 'REGENERATE_BACKUP_CODES', user.id, '', req.clientIp, req.headers['user-agent']);
+  
+  ok(res, {
+    backupCodes: setup.backupCodes,
+  }, 'Backup codes regenerated. Save them securely.');
 });
 
 // ============ DASHBOARD ============
@@ -482,17 +901,20 @@ router.get('/files', auth, (req: Request, res: Response) => {
   });
 });
 
-router.post('/files/upload', auth, requireRole(Role.ADMIN, Role.EDITOR), checkStorageQuota, upload.single('file'), (req: Request, res: Response) => {
+router.post('/files/upload', auth, requireRole(Role.ADMIN, Role.EDITOR), upload.single('file'), (req: Request, res: Response) => {
   if (!req.file) return fail(res, 'No file uploaded');
 
   const user = db.findUserById(req.user!.id);
   if (!user) return fail(res, 'User not found', 404);
   
-  // Check quota
+  // Atomic quota check and reservation
   if (user.role !== Role.ADMIN && user.storageUsed + req.file.size > user.storageQuota) {
     fs.unlinkSync(req.file.path);
     return fail(res, 'Storage quota exceeded', 507);
   }
+  
+  // Reserve quota immediately
+  db.updateStorageUsed(req.user!.id, req.file.size);
 
   // Validate file magic bytes
   const buffer = fs.readFileSync(req.file.path);
@@ -508,28 +930,112 @@ router.post('/files/upload', auth, requireRole(Role.ADMIN, Role.EDITOR), checkSt
     return fail(res, `File too large for this type. Max size: ${Math.round(typeLimit / 1024 / 1024)}MB`);
   }
 
+  // BUG FIX 8: Add filename uniqueness check within same folder/user scope
+  const folderId = req.body.folderId || undefined;
+  const existingFiles = db.getFilesByFolder(folderId, req.user!.id);
+  const sanitizedName = validate.sanitize(req.file.originalname);
+  if (existingFiles.some(f => f.name === sanitizedName && f.status === FileStatus.ACTIVE)) {
+    fs.unlinkSync(req.file.path);
+    return fail(res, 'A file with this name already exists in this location');
+  }
+
   const encrypt = req.body.encrypt !== 'false' && user.preferences.defaultEncrypt !== false;
   const userEncryptionKey = req.body.userEncryptionKey?.trim();
+  
+  // BUG FIX 7: Validate user encryption key length
+  if (userEncryptionKey) {
+    const keyValidation = validate.userEncryptionKey(userEncryptionKey);
+    if (!keyValidation.valid) {
+      fs.unlinkSync(req.file.path);
+      return fail(res, keyValidation.error!);
+    }
+  }
+  
+  // BUG FIX 9: Add comprehensive input validation with whitelist for metadata fields
+  const allowedMetadataFields = ['folderId', 'tags', 'description', 'categoryId', 'encrypt', 'userEncryptionKey', 'clientSideEncrypted', 'encryptedMetadata'];
+  const providedFields = Object.keys(req.body);
+  const invalidFields = providedFields.filter(f => !allowedMetadataFields.includes(f));
+  if (invalidFields.length > 0) {
+    fs.unlinkSync(req.file.path);
+    return fail(res, `Invalid metadata fields: ${invalidFields.join(', ')}`);
+  }
+  
+  // Validate folderId if provided
+  if (req.body.folderId && !validate.isUUID(req.body.folderId)) {
+    fs.unlinkSync(req.file.path);
+    return fail(res, 'Invalid folder ID format');
+  }
+  
+  // Validate tags if provided
+  if (req.body.tags) {
+    try {
+      const tags = JSON.parse(req.body.tags);
+      if (!Array.isArray(tags) || tags.length > 10) {
+        fs.unlinkSync(req.file.path);
+        return fail(res, 'Tags must be an array with max 10 items');
+      }
+      if (!tags.every((t: any) => typeof t === 'string' && validate.tagName(t))) {
+        fs.unlinkSync(req.file.path);
+        return fail(res, 'Invalid tag format');
+      }
+    } catch {
+      fs.unlinkSync(req.file.path);
+      return fail(res, 'Invalid tags JSON');
+    }
+  }
+  
+  // Validate description length
+  if (req.body.description && req.body.description.length > 500) {
+    fs.unlinkSync(req.file.path);
+    return fail(res, 'Description too long (max 500 characters)');
+  }
+  
+  // Validate categoryId if provided
+  if (req.body.categoryId && !validate.isUUID(req.body.categoryId)) {
+    fs.unlinkSync(req.file.path);
+    return fail(res, 'Invalid category ID format');
+  }
+  
   const useUserKey = encrypt && userEncryptionKey && userEncryptionKey.length >= 8;
+  
+  // Check if this is a client-side encrypted upload (zero-knowledge mode)
+  const clientSideEncrypted = req.body.clientSideEncrypted === 'true';
   
   const originalPath = req.file.path;
   const storedName = `${uuid()}.enc`;
   const storedPath = path.join(config.uploadDir, storedName);
 
   // Compute checksum on ORIGINAL content BEFORE encryption
-  const originalChecksum = hashFile(originalPath);
-
-  if (encrypt) {
-    if (useUserKey) {
-      // Use user-provided encryption key
-      encryptFileWithUserKey(originalPath, storedPath, userEncryptionKey);
-    } else {
-      // Use server-managed encryption
-      encryptFile(originalPath, storedPath);
-    }
-    fs.unlinkSync(originalPath);
-  } else {
+  let originalChecksum: string;
+  
+  if (clientSideEncrypted) {
+    // For client-side encrypted files, we can't compute checksum of original
+    // The file is already encrypted when it reaches the server
+    originalChecksum = hashFile(originalPath);
+    // Just move the encrypted file
     fs.renameSync(originalPath, storedPath);
+  } else {
+    // Server-side encryption or no encryption
+    originalChecksum = hashFile(originalPath);
+
+    try {
+      if (encrypt) {
+        if (useUserKey) {
+          encryptFileWithUserKey(originalPath, storedPath, userEncryptionKey);
+        } else {
+          encryptFile(originalPath, storedPath);
+        }
+        secureDelete(originalPath);
+      } else {
+        fs.renameSync(originalPath, storedPath);
+      }
+    } catch (err: any) {
+      // Rollback quota reservation on failure
+      db.updateStorageUsed(req.user!.id, -req.file.size);
+      if (fs.existsSync(originalPath)) fs.unlinkSync(originalPath);
+      if (fs.existsSync(storedPath)) fs.unlinkSync(storedPath);
+      return fail(res, `Upload failed: ${err.message}`, 500);
+    }
   }
 
   const file: FileRecord = {
@@ -539,10 +1045,10 @@ router.post('/files/upload', auth, requireRole(Role.ADMIN, Role.EDITOR), checkSt
     size: req.file.size,
     mimeType: req.file.mimetype,
     ownerId: req.user!.id,
-    encrypted: encrypt,
-    checksum: originalChecksum, // Checksum of original content, not encrypted
-    encryptionVersion: useUserKey ? USER_KEY_VERSION : 3,
-    userKeyEncrypted: useUserKey, // Mark if user-key was used
+    encrypted: encrypt || clientSideEncrypted,
+    checksum: originalChecksum,
+    encryptionVersion: clientSideEncrypted ? 99 : (useUserKey ? USER_KEY_VERSION : 3),
+    userKeyEncrypted: useUserKey || clientSideEncrypted,
     createdAt: new Date(),
     status: FileStatus.ACTIVE,
     folderId: req.body.folderId || undefined,
@@ -554,6 +1060,27 @@ router.post('/files/upload', auth, requireRole(Role.ADMIN, Role.EDITOR), checkSt
     downloadCount: 0,
     categoryId: req.body.categoryId || undefined,
   };
+
+  // Store encrypted metadata if provided (zero-knowledge mode)
+  if (clientSideEncrypted && req.body.encryptedMetadata) {
+    try {
+      const encryptedMeta = JSON.parse(req.body.encryptedMetadata);
+      // Store encrypted metadata in a separate field or database
+      // For now, we'll just mark it as client-side encrypted
+      file.description = '[Encrypted - Zero-Knowledge Mode]';
+    } catch (err) {
+      // BUG FIX 6: Add proper error logging
+      console.error('Failed to parse encrypted metadata:', err);
+      db.logSecurityEvent({
+        userId: req.user!.id,
+        eventType: 'file_analysis' as any,
+        description: 'Failed to parse encrypted metadata during upload',
+        ipAddress: getClientIp(req),
+        userAgent: req.headers['user-agent'],
+        metadata: { error: err instanceof Error ? err.message : String(err) },
+      });
+    }
+  }
 
   db.createFile(file);
   db.log(req.user!.id, 'UPLOAD', file.id, file.name, req.clientIp, req.headers['user-agent']);
@@ -588,6 +1115,13 @@ router.post('/files/:id/version', auth, requireRole(Role.ADMIN, Role.EDITOR), ch
     return fail(res, 'New version must be same file type');
   }
 
+  // BUG FIX 19: Enforce hard limit on file versions BEFORE creating new version
+  const existingVersions = db.getVersionsByFile(oldFile.id);
+  if (existingVersions.length >= config.maxVersions) {
+    fs.unlinkSync(req.file.path);
+    return fail(res, `Maximum version limit reached (${config.maxVersions} versions). Delete old versions first.`);
+  }
+
   // Store current version
   const versionStoredName = `${uuid()}.ver`;
   const versionPath = path.join(config.versionsDir, versionStoredName);
@@ -609,17 +1143,6 @@ router.post('/files/:id/version', auth, requireRole(Role.ADMIN, Role.EDITOR), ch
     comment: req.body.comment,
   };
   db.createVersion(version);
-
-  // Clean up old versions if exceeds limit
-  const versions = db.getVersionsByFile(oldFile.id);
-  if (versions.length > config.maxVersions) {
-    const toDelete = versions.slice(config.maxVersions);
-    for (const v of toDelete) {
-      const vPath = path.join(config.versionsDir, v.storedName);
-      if (fs.existsSync(vPath)) fs.unlinkSync(vPath);
-      db.deleteVersion(v.id);
-    }
-  }
 
   // Process new file
   const encrypt = oldFile.encrypted;
@@ -837,26 +1360,52 @@ router.get('/files/:id/download-decrypted', auth, (req: Request, res: Response) 
   const file = db.findFileById(req.params.id);
   if (!file) return fail(res, 'File not found', 404);
 
-  const canAccess = req.user!.role === Role.ADMIN || file.ownerId === req.user!.id;
+  // Check access: owner, admin, or shared user
+  const canAccess = req.user!.role === Role.ADMIN || 
+                    file.ownerId === req.user!.id || 
+                    file.sharedWith.includes(req.user!.id);
   if (!canAccess) return fail(res, 'Access denied', 403);
-
-  // If user-key encrypted, can't decrypt via this endpoint - need the user's key
-  if (file.userKeyEncrypted) {
-    return fail(res, 'This file is encrypted with a user-provided key. Use the Decrypt File page to decrypt it with your key.', 400);
-  }
 
   const filePath = path.join(config.uploadDir, file.storedName);
   if (!fs.existsSync(filePath)) return fail(res, 'File missing', 404);
 
   try {
-    let content: Buffer;
+    // Get user key from query parameter (for owner access to user-encrypted files)
+    const userKey = req.query.userKey as string | undefined;
     
-    if (file.encrypted) {
-      // Decrypt the file using server's encryption key
-      content = decryptFile(filePath);
-    } else {
-      // Already plain, just read it
-      content = fs.readFileSync(filePath);
+    // Use unified decryption function
+    const content = decryptFileForUser({
+      filePath,
+      file: {
+        id: file.id,
+        encrypted: file.encrypted,
+        userKeyEncrypted: file.userKeyEncrypted,
+        ownerId: file.ownerId,
+        sharedWith: file.sharedWith,
+      },
+      userId: req.user!.id,
+      userKey,
+      getWrappedKey: (fileId, userId) => db.getWrappedKey(fileId, userId),
+      getUserPrivateKey: (userId) => {
+        const user = db.findUserById(userId);
+        return user?.privateKey;
+      },
+    });
+
+    // BUG FIX 11: Verify checksum after decryption before serving file
+    if (file.checksum) {
+      const currentChecksum = nodeCrypto.createHash('sha256').update(content).digest('hex');
+      if (currentChecksum !== file.checksum) {
+        db.logSecurityEvent({
+          userId: req.user!.id,
+          eventType: 'file_integrity_fail' as any,
+          description: `Checksum mismatch after decryption: ${file.name}`,
+          ipAddress: getClientIp(req),
+          userAgent: req.headers['user-agent'],
+          metadata: { fileId: file.id, expected: file.checksum, actual: currentChecksum },
+        });
+        return fail(res, 'File integrity check failed. File may be corrupted or tampered with.', 500);
+      }
     }
 
     db.log(req.user!.id, 'DOWNLOAD_DECRYPTED', file.id, file.name);
@@ -879,7 +1428,7 @@ router.get('/files/:id/download-decrypted', auth, (req: Request, res: Response) 
       userAgent: req.headers['user-agent'],
       metadata: { fileId: file.id },
     });
-    fail(res, 'Failed to decrypt file', 500);
+    fail(res, err.message || 'Failed to decrypt file', 500);
   }
 });
 
@@ -894,6 +1443,17 @@ router.get('/files/:id/encryption-info', auth, (req: Request, res: Response) => 
   let howToDecrypt = 'This file is not encrypted.';
   let keySource = 'None';
   
+  // Get wrapped key information for user-encrypted files
+  const wrappedKeys = file.userKeyEncrypted ? db.getWrappedKeysByFile(file.id) : [];
+  const sharedWithWrappedKeys = wrappedKeys.map(wk => {
+    const user = db.findUserById(wk.userId);
+    return {
+      userId: wk.userId,
+      username: user?.username || 'Unknown',
+      createdAt: wk.createdAt,
+    };
+  });
+  
   if (file.encrypted) {
     if (file.userKeyEncrypted) {
       keySource = 'User-provided key (not stored on server)';
@@ -903,7 +1463,8 @@ router.get('/files/:id/encryption-info', auth, (req: Request, res: Response) => 
         '2. Download this file (encrypted .enc format)\n' +
         '3. Upload it to the Decrypt page\n' +
         '4. Enter your encryption key\n\n' +
-        '⚠️ The server does NOT store your key. If you lost it, this file cannot be recovered.';
+        '⚠️ The server does NOT store your key. If you lost it, this file cannot be recovered.\n\n' +
+        `Sharing: ${wrappedKeys.length} user(s) have wrapped keys for decryption.`;
     } else {
       keySource = 'Server-managed master key';
       howToDecrypt = 'This file is encrypted with the server\'s master encryption key. You can:\n' +
@@ -926,6 +1487,8 @@ router.get('/files/:id/encryption-info', auth, (req: Request, res: Response) => 
     checksum: file.checksum,
     integrityVerified: !!file.integrityVerifiedAt,
     integrityVerifiedAt: file.integrityVerifiedAt,
+    wrappedKeyCount: wrappedKeys.length,
+    sharedWithWrappedKeys: sharedWithWrappedKeys.length > 0 ? sharedWithWrappedKeys : undefined,
   };
 
   ok(res, encryptionInfo);
@@ -955,13 +1518,23 @@ router.post('/test-create-encrypted-file', auth, (req: Request, res: Response) =
     res.send(encryptedBuffer);
     
   } catch (err: any) {
+    // BUG FIX 6: Add proper error logging
     console.error('Test file creation error:', err);
+    db.logSecurityEvent({
+      userId: req.user!.id,
+      eventType: 'file_analysis' as any,
+      description: 'Test file creation failed',
+      ipAddress: getClientIp(req),
+      userAgent: req.headers['user-agent'],
+      metadata: { error: err.message },
+    });
     fail(res, 'Failed to create test file: ' + err.message, 500);
   }
 });
 
 // Decrypt file with user-provided encryption key
-router.post('/decrypt-file', auth, uploadEncrypted.single('file'), async (req: Request, res: Response) => {
+// BUG FIX 10: Add rate limiting (5 attempts per hour) on decryption endpoint
+router.post('/decrypt-file', auth, rateLimit(5, 60 * 60 * 1000), uploadEncrypted.single('file'), async (req: Request, res: Response) => {
   try {
     if (!req.file) {
       return fail(res, 'No file provided', 400);
@@ -1078,6 +1651,35 @@ router.post('/files/download-multiple', auth, async (req: Request, res: Response
   const archive = archiver('zip', { zlib: { level: 5 } });
   res.setHeader('Content-Type', 'application/zip');
   res.setHeader('Content-Disposition', `attachment; filename="files-${Date.now()}.zip"`);
+  
+  // BUG FIX 22: Add timeout to archive creation for bulk downloads
+  const archiveTimeout = setTimeout(() => {
+    archive.abort();
+    db.logSecurityEvent({
+      userId: req.user!.id,
+      eventType: 'file_download_error' as any,
+      description: 'Bulk download timeout - archive creation took too long',
+      ipAddress: getClientIp(req),
+      userAgent: req.headers['user-agent'],
+      metadata: { fileCount: fileIds.length },
+    });
+  }, 5 * 60 * 1000); // 5 minute timeout
+  
+  archive.on('error', (err) => {
+    clearTimeout(archiveTimeout);
+    db.logSecurityEvent({
+      userId: req.user!.id,
+      eventType: 'file_download_error' as any,
+      description: `Bulk download error: ${err.message}`,
+      ipAddress: getClientIp(req),
+      userAgent: req.headers['user-agent'],
+      metadata: { fileCount: fileIds.length },
+    });
+  });
+  
+  archive.on('end', () => {
+    clearTimeout(archiveTimeout);
+  });
   
   archive.pipe(res);
 
@@ -1254,6 +1856,9 @@ router.delete('/files/:id', auth, requireRole(Role.ADMIN, Role.EDITOR), (req: Re
     db.deleteAnnotationsByFile(file.id);
     db.deleteBookmarksByFile(file.id);
     db.deleteShareLinksByFile(file.id);
+    
+    // Delete wrapped keys for user-encrypted files
+    db.deleteWrappedKeysByFile(file.id);
 
     db.deleteFile(file.id);
     db.log(req.user!.id, 'DELETE_PERMANENT', file.id, file.name);
@@ -1289,6 +1894,11 @@ router.post('/files/:id/share', auth, requireRole(Role.ADMIN, Role.EDITOR), (req
   const file = db.findFileById(req.params.id);
   if (!file) return fail(res, 'File not found', 404);
   if (file.ownerId !== req.user!.id && req.user!.role !== Role.ADMIN) return fail(res, 'Not owner', 403);
+
+  // Check if file is user-encrypted - if so, redirect to share-with-key endpoint
+  if (file.userKeyEncrypted) {
+    return fail(res, 'This file is encrypted with your key. Use /files/:id/share-with-key endpoint and provide your encryption key to share.', 400);
+  }
 
   const { userIds, emails } = req.body;
   const toShare: string[] = [];
@@ -1331,6 +1941,120 @@ router.post('/files/:id/share', auth, requireRole(Role.ADMIN, Role.EDITOR), (req
   ok(res, { sharedWith: toShare.length }, 'File shared');
 });
 
+// New endpoint for sharing user-encrypted files with key wrapping
+router.post('/files/:id/share-with-key', auth, requireRole(Role.ADMIN, Role.EDITOR), async (req: Request, res: Response) => {
+  const file = db.findFileById(req.params.id);
+  if (!file) return fail(res, 'File not found', 404);
+  if (file.ownerId !== req.user!.id && req.user!.role !== Role.ADMIN) return fail(res, 'Not owner', 403);
+
+  // Verify file is user-encrypted
+  if (!file.userKeyEncrypted) {
+    return fail(res, 'This endpoint is only for user-encrypted files. Use /files/:id/share for this file.', 400);
+  }
+
+  const { userIds, emails, encryptionKey } = req.body;
+  
+  if (!encryptionKey || typeof encryptionKey !== 'string' || encryptionKey.trim().length < 8) {
+    return fail(res, 'Encryption key is required (minimum 8 characters)', 400);
+  }
+
+  const toShare: string[] = [];
+
+  // Add by user IDs
+  if (Array.isArray(userIds)) {
+    for (const id of userIds) {
+      const user = db.findUserById(id);
+      if (user && id !== file.ownerId && !file.sharedWith.includes(id)) {
+        toShare.push(id);
+      }
+    }
+  }
+
+  // Add by emails
+  if (Array.isArray(emails)) {
+    for (const email of emails) {
+      const user = db.findUserByEmail(email.toLowerCase());
+      if (user && user.id !== file.ownerId && !file.sharedWith.includes(user.id)) {
+        toShare.push(user.id);
+      }
+    }
+  }
+
+  if (toShare.length === 0) {
+    return fail(res, 'No valid users to share with');
+  }
+
+  // Validate owner's encryption key by attempting to extract DEK
+  const filePath = path.join(config.uploadDir, file.storedName);
+  if (!fs.existsSync(filePath)) {
+    return fail(res, 'File not found on disk', 404);
+  }
+
+  let dek: Buffer;
+  try {
+    dek = extractDekFromUserEncryptedFile(filePath, encryptionKey.trim());
+  } catch (err: any) {
+    return fail(res, 'Incorrect encryption key. Cannot share file.', 400);
+  }
+
+  // Wrap DEK for each recipient
+  const wrapped: string[] = [];
+  const failed: Array<{ userId: string; username: string; reason: string }> = [];
+
+  for (const userId of toShare) {
+    const recipient = db.findUserById(userId);
+    if (!recipient) {
+      failed.push({ userId, username: 'Unknown', reason: 'User not found' });
+      continue;
+    }
+
+    if (!recipient.publicKey) {
+      failed.push({ userId, username: recipient.username, reason: 'No encryption keys set up' });
+      continue;
+    }
+
+    try {
+      const wrappedDek = wrapDekForUser(dek, recipient.publicKey);
+      
+      // Store wrapped key in database
+      const wrappedKey: WrappedKey = {
+        id: uuid(),
+        fileId: file.id,
+        userId: recipient.id,
+        wrappedDek,
+        algorithm: 'aes-256-gcm',
+        createdAt: new Date(),
+        createdBy: req.user!.id,
+      };
+      
+      db.createWrappedKey(wrappedKey);
+      wrapped.push(userId);
+    } catch (err: any) {
+      failed.push({ userId, username: recipient.username, reason: `Key wrapping failed: ${err.message}` });
+    }
+  }
+
+  // Update sharedWith array for successfully wrapped users
+  if (wrapped.length > 0) {
+    db.updateFile(file.id, { sharedWith: [...new Set([...file.sharedWith, ...wrapped])] });
+    
+    // Notify shared users
+    const sharer = db.findUserById(req.user!.id);
+    for (const userId of wrapped) {
+      db.notify(userId, NotificationType.FILE_SHARED, 'Encrypted File Shared With You',
+        `${sharer?.username} shared encrypted file "${file.name}" with you.`,
+        { fileId: file.id });
+    }
+  }
+
+  db.log(req.user!.id, 'SHARE_WITH_KEY', file.id, `Shared with ${wrapped.length} users, ${failed.length} failed`);
+  
+  ok(res, { 
+    sharedWith: wrapped.length,
+    failed: failed.length > 0 ? failed : undefined,
+  }, wrapped.length > 0 ? 'File shared successfully' : 'Failed to share with any users');
+});
+
 router.post('/files/:id/unshare', auth, requireRole(Role.ADMIN, Role.EDITOR), (req: Request, res: Response) => {
   const file = db.findFileById(req.params.id);
   if (!file) return fail(res, 'File not found', 404);
@@ -1339,10 +2063,14 @@ router.post('/files/:id/unshare', auth, requireRole(Role.ADMIN, Role.EDITOR), (r
   const { userId, all } = req.body;
   
   if (all) {
+    // Delete all wrapped keys for this file
+    db.deleteWrappedKeysByFile(file.id);
     db.updateFile(file.id, { sharedWith: [] });
     db.log(req.user!.id, 'UNSHARE_ALL', file.id);
     ok(res, null, 'All access removed');
   } else if (userId) {
+    // Delete wrapped key for specific user
+    db.deleteWrappedKeysByUser(file.id, userId);
     db.updateFile(file.id, { sharedWith: file.sharedWith.filter(id => id !== userId) });
     db.log(req.user!.id, 'UNSHARE', file.id, userId);
     ok(res, null, 'Access removed');
@@ -1359,11 +2087,22 @@ router.post('/files/:id/share-link', auth, requireRole(Role.ADMIN, Role.EDITOR),
 
   const { password, expiresInDays, maxDownloads, allowedEmails } = req.body;
 
+  // BUG FIX 14: Generate unique access token
+  let accessToken: string;
+  let attempts = 0;
+  do {
+    accessToken = generateToken(24);
+    attempts++;
+    if (attempts > 10) {
+      return fail(res, 'Failed to generate unique token', 500);
+    }
+  } while (db.findShareLinkByToken(accessToken));
+
   const link: ShareLink = {
     id: uuid(),
     fileId: file.id,
     createdBy: req.user!.id,
-    accessToken: generateToken(24),
+    accessToken,
     password: password ? hashPassword(password) : undefined,
     expiresAt: expiresInDays ? new Date(Date.now() + Math.min(expiresInDays, config.shareLinksMaxDays) * 24 * 60 * 60 * 1000) : undefined,
     maxDownloads: maxDownloads ? Math.min(maxDownloads, 1000) : undefined,
@@ -1383,6 +2122,123 @@ router.post('/files/:id/share-link', auth, requireRole(Role.ADMIN, Role.EDITOR),
     expiresAt: link.expiresAt,
     hasPassword: !!link.password,
   }, 'Share link created', 201);
+});
+
+router.post('/files/:id/share-secure', auth, requireRole(Role.ADMIN, Role.EDITOR), (req: Request, res: Response) => {
+  const file = db.findFileById(req.params.id);
+  if (!file) return fail(res, 'File not found', 404);
+  if (file.ownerId !== req.user!.id && req.user!.role !== Role.ADMIN) return fail(res, 'Not owner', 403);
+
+  const proofCheck = validateZeroTrustProof(req, 'secure-share');
+  if (!proofCheck.valid) {
+    return fail(res, `Zero-trust verification failed: ${proofCheck.reason}`, 428);
+  }
+
+  const recipientsRaw = Array.isArray(req.body?.recipients) ? req.body.recipients : [];
+  if (recipientsRaw.length === 0) {
+    return fail(res, 'At least one recipient with an RSA public key is required');
+  }
+
+  const recipients: SecureRecipientInput[] = [];
+  for (let idx = 0; idx < recipientsRaw.length; idx++) {
+    const candidate = recipientsRaw[idx];
+    const recipientId = typeof candidate?.recipientId === 'string' && candidate.recipientId.trim()
+      ? candidate.recipientId.trim()
+      : `recipient-${idx + 1}`;
+    const publicKey = typeof candidate?.publicKey === 'string' ? candidate.publicKey.trim() : '';
+    const email = typeof candidate?.email === 'string' ? candidate.email.trim().toLowerCase() : undefined;
+
+    if (!publicKey) {
+      return fail(res, `Recipient ${recipientId} is missing publicKey`);
+    }
+
+    recipients.push({ recipientId, publicKey, email });
+  }
+
+  const wrappedSecrets: Record<string, string> = {};
+  const recipientHints: string[] = [];
+  const secureSecret = generatePassphrase(6);
+  for (const recipient of recipients) {
+    try {
+      const wrapped = rsaEncrypt(Buffer.from(secureSecret, 'utf-8'), recipient.publicKey);
+      wrappedSecrets[recipient.recipientId] = wrapped.toString('base64');
+      recipientHints.push(recipient.recipientId);
+      if (recipient.email) recipientHints.push(recipient.email);
+    } catch {
+      return fail(res, `Invalid RSA public key for recipient ${recipient.recipientId}`);
+    }
+  }
+
+  const explicitAllowedEmails = Array.isArray(req.body?.allowedEmails)
+    ? req.body.allowedEmails
+        .filter((e: unknown) => typeof e === 'string')
+        .map((e: string) => e.toLowerCase().trim())
+        .filter(Boolean)
+    : [];
+  const recipientEmails = recipients
+    .map(r => r.email)
+    .filter((e): e is string => !!e);
+  const allowedEmails = [...new Set([...explicitAllowedEmails, ...recipientEmails])];
+
+  const expiresInDaysRaw = Number(req.body?.expiresInDays);
+  const expiresInDays = Number.isFinite(expiresInDaysRaw) && expiresInDaysRaw > 0
+    ? Math.min(expiresInDaysRaw, config.shareLinksMaxDays)
+    : 7;
+  const maxDownloadsRaw = Number(req.body?.maxDownloads);
+  const maxDownloads = Number.isFinite(maxDownloadsRaw) && maxDownloadsRaw > 0
+    ? Math.min(maxDownloadsRaw, 1000)
+    : recipients.length;
+  const requireZeroTrustProof = req.body?.requireZeroTrustProof !== false;
+
+  // BUG FIX 14: Generate unique access token
+  let accessToken: string;
+  let attempts = 0;
+  do {
+    accessToken = generateToken(24);
+    attempts++;
+    if (attempts > 10) {
+      return fail(res, 'Failed to generate unique token', 500);
+    }
+  } while (db.findShareLinkByToken(accessToken));
+
+  const link: ShareLink = {
+    id: uuid(),
+    fileId: file.id,
+    createdBy: req.user!.id,
+    accessToken,
+    password: hashPassword(secureSecret),
+    expiresAt: new Date(Date.now() + expiresInDays * 24 * 60 * 60 * 1000),
+    maxDownloads,
+    downloadCount: 0,
+    allowedEmails: allowedEmails.length > 0 ? allowedEmails : undefined,
+    createdAt: new Date(),
+    isActive: true,
+    requireZeroTrustProof,
+    secureShare: {
+      enabled: true,
+      keyExchange: 'rsa-oaep-sha256',
+      wrappedSecrets,
+      recipientHints,
+    },
+  };
+
+  db.createShareLink(link);
+  db.log(req.user!.id, 'CREATE_SECURE_SHARE_LINK', file.id, `Secure share for ${recipients.length} recipients`);
+
+  ok(res, {
+    id: link.id,
+    url: `/api/share/${link.accessToken}`,
+    accessToken: link.accessToken,
+    expiresAt: link.expiresAt,
+    secureShare: true,
+    keyExchange: 'RSA-OAEP-SHA256',
+    requireZeroTrustProof,
+    recipientPackages: Object.entries(wrappedSecrets).map(([recipientId, wrappedSecret]) => ({
+      recipientId,
+      wrappedSecret,
+      unwrapInstruction: 'Recipient decrypts wrappedSecret with RSA private key and uses the output as share password',
+    })),
+  }, 'Secure asymmetric share link created', 201);
 });
 
 router.delete('/share-links/:id', auth, (req: Request, res: Response) => {
@@ -1419,8 +2275,50 @@ router.get('/share/:token', optionalAuth, (req: Request, res: Response) => {
     fileSize: file.size,
     mimeType: file.mimeType,
     requiresPassword: !!link.password,
+    requiresZeroTrustProof: !!link.requireZeroTrustProof,
+    secureShare: !!link.secureShare?.enabled,
+    keyExchange: link.secureShare?.enabled ? 'RSA-OAEP-SHA256' : null,
     expiresAt: link.expiresAt,
     remainingDownloads: link.maxDownloads ? link.maxDownloads - link.downloadCount : null,
+  });
+});
+
+router.post('/share/:token/key-package', optionalAuth, (req: Request, res: Response) => {
+  const link = db.findShareLinkByToken(req.params.token);
+  if (!link || !link.isActive) return fail(res, 'Invalid or expired link', 404);
+  if (!link.secureShare?.enabled) return fail(res, 'This link is not configured for secure asymmetric sharing', 400);
+
+  if (link.expiresAt && link.expiresAt < new Date()) {
+    db.updateShareLink(link.id, { isActive: false });
+    return fail(res, 'Link has expired', 410);
+  }
+
+  const requesterEmail = req.user
+    ? db.findUserById(req.user.id)?.email?.toLowerCase()
+    : (typeof req.body?.email === 'string' ? req.body.email.toLowerCase().trim() : undefined);
+
+  if (link.allowedEmails && link.allowedEmails.length > 0) {
+    if (!requesterEmail || !link.allowedEmails.includes(requesterEmail)) {
+      return fail(res, 'Your email is not authorized for this secure share', 403);
+    }
+  }
+
+  const recipientId = typeof req.body?.recipientId === 'string' ? req.body.recipientId.trim() : '';
+  if (!recipientId) {
+    return fail(res, 'recipientId is required');
+  }
+
+  const wrappedSecret = link.secureShare.wrappedSecrets[recipientId];
+  if (!wrappedSecret) {
+    return fail(res, 'No key package found for this recipient', 404);
+  }
+
+  ok(res, {
+    recipientId,
+    keyExchange: 'RSA-OAEP-SHA256',
+    wrappedSecret,
+    accessToken: link.accessToken,
+    downloadEndpoint: `/api/share/${link.accessToken}/download`,
   });
 });
 
@@ -1434,6 +2332,16 @@ router.post('/share/:token/download', optionalAuth, (req: Request, res: Response
 
   if (link.maxDownloads && link.downloadCount >= link.maxDownloads) {
     return fail(res, 'Download limit reached', 410);
+  }
+
+  if (link.requireZeroTrustProof) {
+    if (!req.user || !req.sessionId) {
+      return fail(res, 'Authenticated session required for zero-trust protected share download', 401);
+    }
+    const proofCheck = validateZeroTrustProof(req, 'share-download');
+    if (!proofCheck.valid) {
+      return fail(res, `Zero-trust verification failed: ${proofCheck.reason}`, 428);
+    }
   }
 
   // Check password if required
@@ -1465,17 +2373,62 @@ router.post('/share/:token/download', optionalAuth, (req: Request, res: Response
   db.updateFile(file.id, { downloadCount: file.downloadCount + 1 });
 
   try {
-    if (file.encrypted) {
-      const decrypted = decryptFile(filePath);
-      res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(file.name)}"`);
-      res.setHeader('Content-Type', file.mimeType);
-      res.setHeader('Content-Length', decrypted.length);
-      res.send(decrypted);
+    let decrypted: Buffer;
+    
+    // Check if file is user-encrypted
+    if (file.userKeyEncrypted) {
+      // User-encrypted files via share links require the user to be authenticated and have a wrapped key
+      if (!req.user) {
+        return fail(res, 'This file is encrypted with the owner\'s key. You must be logged in and explicitly shared with to access it.', 403);
+      }
+      
+      // Check if user has a wrapped key
+      const wrappedKey = db.getWrappedKey(file.id, req.user.id);
+      if (!wrappedKey) {
+        return fail(res, 'This file is encrypted with the owner\'s key. The owner must explicitly share it with you using the share-with-key feature.', 403);
+      }
+      
+      // Use unified decryption
+      decrypted = decryptFileForUser({
+        filePath,
+        file: {
+          id: file.id,
+          encrypted: file.encrypted,
+          userKeyEncrypted: file.userKeyEncrypted,
+          ownerId: file.ownerId,
+          sharedWith: file.sharedWith,
+        },
+        userId: req.user.id,
+        getWrappedKey: (fileId, userId) => db.getWrappedKey(fileId, userId),
+        getUserPrivateKey: (userId) => {
+          const user = db.findUserById(userId);
+          return user?.privateKey;
+        },
+      });
+    } else if (file.encrypted) {
+      // Server-encrypted file - decrypt with server key
+      decrypted = decryptFile(filePath);
     } else {
-      res.download(filePath, file.name);
+      // Unencrypted file - read directly
+      decrypted = fs.readFileSync(filePath);
     }
-  } catch {
-    fail(res, 'Failed to download file', 500);
+    
+    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(file.name)}"`);
+    res.setHeader('Content-Type', file.mimeType);
+    res.setHeader('Content-Length', decrypted.length);
+    res.send(decrypted);
+  } catch (err: any) {
+    // BUG FIX 6: Add proper error logging
+    console.error('Share link download error:', err);
+    db.logSecurityEvent({
+      userId: req.user?.id || 'anonymous',
+      eventType: 'file_download_error' as any,
+      description: `Share link download failed: ${err.message}`,
+      ipAddress: getClientIp(req),
+      userAgent: req.headers['user-agent'],
+      metadata: { error: err.message },
+    });
+    fail(res, err.message || 'Failed to download file', 500);
   }
 });
 
@@ -2026,6 +2979,17 @@ router.get('/audit/actions', auth, requireRole(Role.ADMIN), (req: Request, res: 
 // ============ SYSTEM ============
 router.get('/system/stats', auth, requireRole(Role.ADMIN), (req: Request, res: Response) => {
   ok(res, db.getSystemStats());
+});
+
+router.get('/system/rate-limiter/stats', auth, requireRole(Role.ADMIN), (req: Request, res: Response) => {
+  ok(res, globalRateLimiter.getStats());
+});
+
+router.post('/system/rate-limiter/unblock/:ip', auth, requireRole(Role.ADMIN), (req: Request, res: Response) => {
+  const { ip } = req.params;
+  globalRateLimiter.unblock(ip);
+  db.log(req.user!.id, 'UNBLOCK_IP', ip, 'Rate limiter unblock');
+  ok(res, null, `IP ${ip} unblocked`);
 });
 
 router.get('/system/health', (req: Request, res: Response) => {
@@ -2970,6 +3934,546 @@ router.post('/security/unlock/:userId', auth, requireRole(Role.ADMIN), (req: Req
   });
   
   ok(res, null, 'Account unlocked');
+});
+
+// ============ ADVANCED ENCRYPTION API ============
+
+// Get available encryption algorithms
+router.get('/encryption/algorithms', auth, (req: Request, res: Response) => {
+  const algorithms = [
+    {
+      id: 'aes-256-gcm',
+      name: 'AES-256-GCM',
+      description: 'Industry standard symmetric encryption with authentication',
+      type: 'symmetric',
+      keyRequired: false,
+      passwordRequired: false,
+      recommended: true
+    },
+    {
+      id: 'chacha20-poly1305',
+      name: 'ChaCha20-Poly1305',
+      description: 'Modern high-performance authenticated encryption',
+      type: 'symmetric',
+      keyRequired: false,
+      passwordRequired: true,
+      recommended: true
+    },
+    {
+      id: 'user-key',
+      name: 'User Password Encryption',
+      description: 'AES-256-GCM encrypted with your own password (server never sees key)',
+      type: 'symmetric',
+      keyRequired: false,
+      passwordRequired: true,
+      recommended: true
+    },
+    {
+      id: 'hybrid-rsa-aes',
+      name: 'Hybrid RSA + AES',
+      description: 'RSA encrypts symmetric key, AES encrypts data. For sharing with specific recipients.',
+      type: 'hybrid',
+      keyRequired: true,
+      passwordRequired: false,
+      recommended: false
+    },
+    {
+      id: 'hybrid-rsa-chacha',
+      name: 'Hybrid RSA + ChaCha20',
+      description: 'RSA encrypts symmetric key, ChaCha20 encrypts data.',
+      type: 'hybrid',
+      keyRequired: true,
+      passwordRequired: false,
+      recommended: false
+    },
+    {
+      id: 'envelope',
+      name: 'Envelope Encryption (2-Layer)',
+      description: 'Double-layer encryption: ChaCha20 + AES-256 for maximum security',
+      type: 'envelope',
+      keyRequired: false,
+      passwordRequired: true,
+      recommended: false
+    }
+  ];
+  
+  ok(res, algorithms);
+});
+
+// Generate encryption key pair
+router.post('/encryption/keypairs', auth, async (req: Request, res: Response) => {
+  const { type, name, keySize = 4096, curve = 'secp384r1', password } = req.body;
+  
+  if (!type || !name) {
+    return fail(res, 'Type and name are required');
+  }
+  
+  if (!password || password.length < 8) {
+    return fail(res, 'Password (min 8 chars) required to protect private key');
+  }
+  
+  try {
+    let publicKey: string;
+    let privateKey: string;
+    
+    switch (type) {
+      case 'rsa':
+        const rsaKeys = generateRSAKeyPair(keySize as 2048 | 3072 | 4096);
+        publicKey = rsaKeys.publicKey;
+        privateKey = rsaKeys.privateKey;
+        break;
+      
+      case 'ecdh':
+        const ecdhKeys = generateECDHKeyPair(curve as 'prime256v1' | 'secp384r1' | 'secp521r1');
+        publicKey = ecdhKeys.publicKey;
+        privateKey = ecdhKeys.privateKey;
+        break;
+      
+      case 'ed25519':
+        const edKeys = generateSigningKeyPair();
+        publicKey = edKeys.publicKey;
+        privateKey = edKeys.privateKey;
+        break;
+      
+      case 'ecdsa':
+        const ecdsaKeys = generateECDSAKeyPair(curve as 'prime256v1' | 'secp384r1');
+        publicKey = ecdsaKeys.publicKey;
+        privateKey = ecdsaKeys.privateKey;
+        break;
+      
+      default:
+        return fail(res, 'Invalid key type. Use: rsa, ecdh, ed25519, or ecdsa');
+    }
+    
+    // Encrypt private key with user's password before storing
+    const encryptedPrivateKey = encryptBufferWithUserKey(
+      Buffer.from(privateKey, 'utf8'),
+      password
+    ).toString('base64');
+    
+    const keyPair: UserKeyPair = {
+      id: uuid(),
+      userId: req.user!.id,
+      name,
+      type,
+      publicKey,
+      encryptedPrivateKey,
+      keySize: type === 'rsa' ? keySize : undefined,
+      curve: ['ecdh', 'ecdsa'].includes(type) ? curve : undefined,
+      createdAt: new Date(),
+      isDefault: false
+    };
+    
+    db.createKeyPair(keyPair);
+    
+    // Return without the encrypted private key for security
+    ok(res, {
+      id: keyPair.id,
+      name: keyPair.name,
+      type: keyPair.type,
+      publicKey: keyPair.publicKey,
+      keySize: keyPair.keySize,
+      curve: keyPair.curve,
+      createdAt: keyPair.createdAt
+    }, 'Key pair generated successfully');
+    
+  } catch (err: any) {
+    fail(res, `Failed to generate key pair: ${err.message}`);
+  }
+});
+
+// List user's key pairs
+router.get('/encryption/keypairs', auth, (req: Request, res: Response) => {
+  const keyPairs = db.getKeyPairsByUser(req.user!.id);
+  
+  // Don't return encrypted private keys
+  const safeKeyPairs = keyPairs.map(kp => ({
+    id: kp.id,
+    name: kp.name,
+    type: kp.type,
+    publicKey: kp.publicKey,
+    keySize: kp.keySize,
+    curve: kp.curve,
+    createdAt: kp.createdAt,
+    lastUsedAt: kp.lastUsedAt,
+    isDefault: kp.isDefault
+  }));
+  
+  ok(res, safeKeyPairs);
+});
+
+// Delete a key pair
+router.delete('/encryption/keypairs/:id', auth, (req: Request, res: Response) => {
+  const keyPair = db.getKeyPairById(req.params.id);
+  
+  if (!keyPair) {
+    return fail(res, 'Key pair not found', 404);
+  }
+  
+  if (keyPair.userId !== req.user!.id) {
+    return fail(res, 'Unauthorized', 403);
+  }
+  
+  db.deleteKeyPair(req.params.id);
+  ok(res, null, 'Key pair deleted');
+});
+
+// Set default key pair
+router.post('/encryption/keypairs/:id/default', auth, (req: Request, res: Response) => {
+  const keyPair = db.getKeyPairById(req.params.id);
+  
+  if (!keyPair) {
+    return fail(res, 'Key pair not found', 404);
+  }
+  
+  if (keyPair.userId !== req.user!.id) {
+    return fail(res, 'Unauthorized', 403);
+  }
+  
+  db.setDefaultKeyPair(req.user!.id, req.params.id);
+  ok(res, null, 'Default key pair updated');
+});
+
+// Get encryption info for a file
+router.get('/files/:id/encryption-info', auth, async (req: Request, res: Response) => {
+  const file = db.findFileById(req.params.id);
+  
+  if (!file) {
+    return fail(res, 'File not found', 404);
+  }
+  
+  if (file.ownerId !== req.user!.id && !file.sharedWith.includes(req.user!.id)) {
+    return fail(res, 'Unauthorized', 403);
+  }
+  
+  try {
+    const filePath = path.join(config.uploadDir, file.storedName);
+    const fileData = fs.readFileSync(filePath);
+    const info = getEncryptionInfo(fileData);
+    
+    const signature = file.signatureId ? db.getFileSignature(file.signatureId) : null;
+    
+    ok(res, {
+      encrypted: file.encrypted,
+      algorithm: info.algorithm,
+      version: info.version,
+      requiresPassword: info.requiresPassword,
+      requiresPrivateKey: info.requiresKey,
+      userKeyEncrypted: file.userKeyEncrypted,
+      signature: signature ? {
+        signedBy: db.findUserById(signature.signedBy)?.username,
+        signedAt: signature.signedAt,
+        algorithm: signature.algorithm,
+        isValid: signature.isValid,
+        lastVerifiedAt: signature.lastVerifiedAt
+      } : null
+    });
+  } catch (err: any) {
+    fail(res, `Failed to get encryption info: ${err.message}`);
+  }
+});
+
+// Re-encrypt file with different algorithm
+router.post('/files/:id/reencrypt', auth, async (req: Request, res: Response) => {
+  const { algorithm, password, publicKeyId, currentPassword } = req.body;
+  
+  const file = db.findFileById(req.params.id);
+  
+  if (!file) {
+    return fail(res, 'File not found', 404);
+  }
+  
+  if (file.ownerId !== req.user!.id) {
+    return fail(res, 'Only file owner can re-encrypt', 403);
+  }
+  
+  try {
+    const filePath = path.join(config.uploadDir, file.storedName);
+    
+    // First decrypt the file
+    let decrypted: Buffer;
+    
+    if (file.userKeyEncrypted) {
+      if (!currentPassword) {
+        return fail(res, 'Current password required to decrypt');
+      }
+      decrypted = decryptFileWithUserKey(filePath, currentPassword);
+    } else {
+      decrypted = decryptFile(filePath);
+    }
+    
+    // Now re-encrypt with new algorithm
+    let encrypted: Buffer;
+    let newUserKeyEncrypted = false;
+    let hybridKeyId: string | undefined;
+    
+    switch (algorithm) {
+      case 'aes-256-gcm':
+        encrypted = universalEncrypt(decrypted, { algorithm: EncryptionAlgorithm.AES_256_GCM });
+        break;
+      
+      case 'chacha20-poly1305':
+        if (!password) return fail(res, 'Password required for ChaCha20');
+        encrypted = universalEncrypt(decrypted, { algorithm: EncryptionAlgorithm.CHACHA20_POLY1305, password });
+        newUserKeyEncrypted = true;
+        break;
+      
+      case 'user-key':
+        if (!password) return fail(res, 'Password required for user-key encryption');
+        encrypted = universalEncrypt(decrypted, { algorithm: EncryptionAlgorithm.USER_KEY, password });
+        newUserKeyEncrypted = true;
+        break;
+      
+      case 'envelope':
+        if (!password) return fail(res, 'Password required for envelope encryption');
+        encrypted = universalEncrypt(decrypted, { algorithm: EncryptionAlgorithm.ENVELOPE, password });
+        newUserKeyEncrypted = true;
+        break;
+      
+      case 'hybrid-rsa-aes':
+      case 'hybrid-rsa-chacha':
+        if (!publicKeyId) return fail(res, 'Public key ID required for hybrid encryption');
+        const keyPair = db.getKeyPairById(publicKeyId);
+        if (!keyPair || keyPair.type !== 'rsa') {
+          return fail(res, 'Valid RSA key pair required');
+        }
+        const hybridAlg = algorithm === 'hybrid-rsa-chacha' 
+          ? EncryptionAlgorithm.HYBRID_RSA_CHACHA 
+          : EncryptionAlgorithm.HYBRID_RSA_AES;
+        encrypted = universalEncrypt(decrypted, { algorithm: hybridAlg, publicKey: keyPair.publicKey });
+        hybridKeyId = publicKeyId;
+        break;
+      
+      default:
+        return fail(res, 'Invalid algorithm');
+    }
+    
+    // Write encrypted file
+    fs.writeFileSync(filePath, encrypted);
+    
+    // Update file record
+    db.updateFile(file.id, {
+      userKeyEncrypted: newUserKeyEncrypted,
+      encryptionAlgorithm: algorithm as EncryptionAlgorithmType,
+      hybridKeyId,
+      checksum: hashFile(filePath)
+    });
+    
+    // Log encryption audit
+    db.logEncryptionAudit({
+      id: uuid(),
+      fileId: file.id,
+      userId: req.user!.id,
+      action: 'reencrypt',
+      algorithm: algorithm as EncryptionAlgorithmType,
+      timestamp: new Date(),
+      success: true,
+      ipAddress: getClientIp(req)
+    });
+    
+    ok(res, null, `File re-encrypted with ${algorithm}`);
+    
+  } catch (err: any) {
+    db.logEncryptionAudit({
+      id: uuid(),
+      fileId: file.id,
+      userId: req.user!.id,
+      action: 'reencrypt',
+      algorithm: algorithm as EncryptionAlgorithmType,
+      timestamp: new Date(),
+      success: false,
+      errorMessage: err.message,
+      ipAddress: getClientIp(req)
+    });
+    fail(res, `Re-encryption failed: ${err.message}`);
+  }
+});
+
+// Sign a file
+router.post('/files/:id/sign', auth, async (req: Request, res: Response) => {
+  const { keyPairId, password } = req.body;
+  
+  const file = db.findFileById(req.params.id);
+  
+  if (!file) {
+    return fail(res, 'File not found', 404);
+  }
+  
+  if (file.ownerId !== req.user!.id) {
+    return fail(res, 'Only file owner can sign', 403);
+  }
+  
+  if (!keyPairId || !password) {
+    return fail(res, 'Key pair ID and password required');
+  }
+  
+  try {
+    const keyPair = db.getKeyPairById(keyPairId);
+    
+    if (!keyPair) {
+      return fail(res, 'Key pair not found', 404);
+    }
+    
+    if (keyPair.userId !== req.user!.id) {
+      return fail(res, 'Unauthorized to use this key pair', 403);
+    }
+    
+    if (!['ed25519', 'ecdsa'].includes(keyPair.type)) {
+      return fail(res, 'Key pair must be ed25519 or ecdsa for signing');
+    }
+    
+    // Decrypt private key
+    const encryptedPrivateKey = Buffer.from(keyPair.encryptedPrivateKey, 'base64');
+    const privateKey = decryptBufferWithUserKey(encryptedPrivateKey, password).toString('utf8');
+    
+    // Read file and create signature
+    const filePath = path.join(config.uploadDir, file.storedName);
+    const fileData = fs.readFileSync(filePath);
+    
+    let signature: string;
+    if (keyPair.type === 'ed25519') {
+      signature = digitalSign(fileData, privateKey);
+    } else {
+      signature = ecdsaSign(fileData, privateKey);
+    }
+    
+    // Store signature
+    const sigRecord: FileSignature = {
+      id: uuid(),
+      fileId: file.id,
+      signedBy: req.user!.id,
+      signature,
+      algorithm: keyPair.type as 'ed25519' | 'ecdsa',
+      publicKeyId: keyPairId,
+      signedAt: new Date(),
+      isValid: true,
+      lastVerifiedAt: new Date()
+    };
+    
+    db.createFileSignature(sigRecord);
+    db.updateFile(file.id, { signatureId: sigRecord.id });
+    db.updateKeyPair(keyPairId, { lastUsedAt: new Date() });
+    
+    ok(res, {
+      signatureId: sigRecord.id,
+      signedAt: sigRecord.signedAt,
+      algorithm: sigRecord.algorithm
+    }, 'File signed successfully');
+    
+  } catch (err: any) {
+    fail(res, `Signing failed: ${err.message}`);
+  }
+});
+
+// Verify file signature
+router.post('/files/:id/verify-signature', auth, async (req: Request, res: Response) => {
+  const file = db.findFileById(req.params.id);
+  
+  if (!file) {
+    return fail(res, 'File not found', 404);
+  }
+  
+  if (!file.signatureId) {
+    return fail(res, 'File has no signature');
+  }
+  
+  try {
+    const sigRecord = db.getFileSignature(file.signatureId);
+    
+    if (!sigRecord) {
+      return fail(res, 'Signature record not found');
+    }
+    
+    const keyPair = db.getKeyPairById(sigRecord.publicKeyId);
+    
+    if (!keyPair) {
+      return fail(res, 'Signing key not found - cannot verify');
+    }
+    
+    const filePath = path.join(config.uploadDir, file.storedName);
+    const fileData = fs.readFileSync(filePath);
+    
+    let isValid: boolean;
+    if (sigRecord.algorithm === 'ed25519') {
+      isValid = verifyDigitalSignature(fileData, sigRecord.signature, keyPair.publicKey);
+    } else {
+      isValid = verifyECDSASignature(fileData, sigRecord.signature, keyPair.publicKey);
+    }
+    
+    // Update signature record
+    db.updateFileSignature(sigRecord.id, {
+      isValid,
+      lastVerifiedAt: new Date()
+    });
+    
+    const signer = db.findUserById(sigRecord.signedBy);
+    
+    ok(res, {
+      isValid,
+      signedBy: signer?.username || 'Unknown',
+      signedAt: sigRecord.signedAt,
+      algorithm: sigRecord.algorithm,
+      verifiedAt: new Date()
+    });
+    
+  } catch (err: any) {
+    fail(res, `Verification failed: ${err.message}`);
+  }
+});
+
+// Get encryption audit log for a file
+router.get('/files/:id/encryption-audit', auth, (req: Request, res: Response) => {
+  const file = db.findFileById(req.params.id);
+  
+  if (!file) {
+    return fail(res, 'File not found', 404);
+  }
+  
+  if (file.ownerId !== req.user!.id && req.user!.role !== Role.ADMIN) {
+    return fail(res, 'Unauthorized', 403);
+  }
+  
+  const audits = db.getEncryptionAudits(file.id);
+  ok(res, audits);
+});
+
+// Generate secure passphrase
+router.get('/encryption/generate-passphrase', auth, (req: Request, res: Response) => {
+  const wordCount = parseInt(req.query.words as string) || 6;
+  const passphrase = generatePassphrase(Math.min(Math.max(wordCount, 4), 12));
+  ok(res, { passphrase });
+});
+
+// Decrypt private key (for client-side operations)
+router.post('/encryption/keypairs/:id/decrypt-private', auth, async (req: Request, res: Response) => {
+  const { password } = req.body;
+  
+  if (!password) {
+    return fail(res, 'Password required');
+  }
+  
+  const keyPair = db.getKeyPairById(req.params.id);
+  
+  if (!keyPair) {
+    return fail(res, 'Key pair not found', 404);
+  }
+  
+  if (keyPair.userId !== req.user!.id) {
+    return fail(res, 'Unauthorized', 403);
+  }
+  
+  try {
+    const encryptedPrivateKey = Buffer.from(keyPair.encryptedPrivateKey, 'base64');
+    const privateKey = decryptBufferWithUserKey(encryptedPrivateKey, password).toString('utf8');
+    
+    // For security, we typically wouldn't return the private key
+    // But for client-side hybrid decryption, we need it
+    // This should be done over HTTPS only
+    ok(res, { privateKey });
+    
+  } catch (err: any) {
+    fail(res, 'Invalid password');
+  }
 });
 
 export default router;

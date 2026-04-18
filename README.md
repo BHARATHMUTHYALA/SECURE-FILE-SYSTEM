@@ -5,6 +5,8 @@ A secure file management system with role-based access control (RBAC).
 ## Features
 
 - **User Authentication**: JWT-based authentication with bcrypt password hashing
+- **Zero-Trust Controls**: Session/IP/device-bound short-lived proof tokens for sensitive operations
+- **Asymmetric Secure Sharing**: RSA-OAEP wrapped share secrets for recipient-specific secure access
 - **Role-Based Access Control**: Admin, Editor, and Viewer roles
 - **File Management**: Upload, download, view, and delete files
 - **File Sharing**: Share files with specific users
@@ -40,7 +42,13 @@ npm run dev
 - `GET /api/files/:id` - Get file details
 - `GET /api/files/:id/download` - Download file
 - `POST /api/files/:id/share` - Share file with users
+- `POST /api/files/:id/share-secure` - Create secure asymmetric share link (requires zero-trust proof)
 - `DELETE /api/files/:id` - Delete file
+
+### Zero Trust & Secure Sharing
+- `POST /api/security/zero-trust/proof` - Issue short-lived zero-trust proof for a purpose
+- `POST /api/share/:token/key-package` - Retrieve RSA-wrapped share secret for recipient
+- `POST /api/share/:token/download` - Download shared file (zero-trust proof required when enabled)
 
 ### Users (Admin only)
 - `GET /api/users` - List all users

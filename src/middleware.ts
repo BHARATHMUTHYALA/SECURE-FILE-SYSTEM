@@ -55,9 +55,18 @@ export const auth = (req: Request, res: Response, next: NextFunction): void => {
   if (!token) { fail(res, 'No token provided', 401); return; }
 
   try {
-    const decoded = jwt.verify(token, config.jwtSecret) as { userId: string; role: Role; sessionId?: string };
+    const decoded = jwt.verify(token, config.jwtSecret) as { userId: string; role: Role; sessionId?: string; iat?: number };
     const user = db.findUserById(decoded.userId);
     if (!user) { fail(res, 'User not found', 401); return; }
+    
+    // CRITICAL FIX: Check if token was issued before password change
+    if (user.passwordChangedAt && decoded.iat) {
+      const tokenIssuedAt = new Date(decoded.iat * 1000);
+      if (tokenIssuedAt < user.passwordChangedAt) {
+        fail(res, 'Token invalidated due to password change. Please login again.', 401);
+        return;
+      }
+    }
     
     // Check if account is locked
     if (user.lockedUntil && user.lockedUntil > new Date()) {
@@ -93,14 +102,23 @@ export const auth = (req: Request, res: Response, next: NextFunction): void => {
 export const optionalAuth = (req: Request, res: Response, next: NextFunction): void => {
   const token = req.headers.authorization?.replace('Bearer ', '');
   if (!token) { 
+    req.clientIp = getClientIp(req);
     next(); 
     return; 
   }
 
   try {
-    const decoded = jwt.verify(token, config.jwtSecret) as { userId: string; role: Role };
+    const decoded = jwt.verify(token, config.jwtSecret) as { userId: string; role: Role; sessionId?: string };
     const user = db.findUserById(decoded.userId);
-    if (user) {
+    if (user && (!user.lockedUntil || user.lockedUntil <= new Date())) {
+      // If token carries a session, only trust it when session is still active.
+      if (decoded.sessionId) {
+        const session = db.findSessionById(decoded.sessionId);
+        if (session && session.expiresAt > new Date()) {
+          db.updateSession(decoded.sessionId, { lastActiveAt: new Date() });
+          req.sessionId = decoded.sessionId;
+        }
+      }
       req.user = { id: decoded.userId, role: user.role };
     }
   } catch {
@@ -152,30 +170,110 @@ export const validate = {
   sanitize: (str: string): string => str.replace(/[<>\"'&]/g, '').trim(),
   isUUID: (str: string): boolean => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str),
   hexColor: (color: string): boolean => /^#[0-9A-Fa-f]{6}$/.test(color),
+  // BUG FIX 7: Add max length validation for user encryption keys
+  userEncryptionKey: (key: string): { valid: boolean; error?: string } => {
+    if (!key || key.length < 8) return { valid: false, error: 'Encryption key must be at least 8 characters' };
+    if (key.length > 1024) return { valid: false, error: 'Encryption key too long (max 1024 characters)' };
+    return { valid: true };
+  },
+  // BUG FIX 17: Add password strength meter and common password check
+  passwordStrength: (pw: string): { score: number; feedback: string[] } => {
+    const feedback: string[] = [];
+    let score = 0;
+    
+    // Length scoring
+    if (pw.length >= 8) score += 1;
+    if (pw.length >= 12) score += 1;
+    if (pw.length >= 16) score += 1;
+    
+    // Character variety
+    if (/[a-z]/.test(pw)) score += 1;
+    if (/[A-Z]/.test(pw)) score += 1;
+    if (/[0-9]/.test(pw)) score += 1;
+    if (/[!@#$%^&*(),.?":{}|<>]/.test(pw)) score += 1;
+    
+    // Common patterns (reduce score)
+    const commonPasswords = [
+      'password', '123456', '12345678', 'qwerty', 'abc123', 'monkey', '1234567', 
+      'letmein', 'trustno1', 'dragon', 'baseball', 'iloveyou', 'master', 'sunshine',
+      'ashley', 'bailey', 'passw0rd', 'shadow', '123123', '654321', 'superman',
+      'qazwsx', 'michael', 'football', 'password1', 'password123', 'admin', 'welcome'
+    ];
+    
+    if (commonPasswords.some(common => pw.toLowerCase().includes(common))) {
+      score = Math.max(0, score - 3);
+      feedback.push('Avoid common passwords');
+    }
+    
+    // Sequential characters
+    if (/(.)\1{2,}/.test(pw)) {
+      score = Math.max(0, score - 1);
+      feedback.push('Avoid repeated characters');
+    }
+    
+    // Feedback based on score
+    if (score < 3) feedback.push('Very weak password');
+    else if (score < 5) feedback.push('Weak password');
+    else if (score < 7) feedback.push('Moderate password');
+    else feedback.push('Strong password');
+    
+    if (pw.length < 12) feedback.push('Consider using at least 12 characters');
+    if (!/[!@#$%^&*(),.?":{}|<>]/.test(pw)) feedback.push('Add special characters for better security');
+    
+    return { score: Math.min(10, score), feedback };
+  },
 };
 
 // File magic bytes validation
+// BUG FIX 21: Enhanced MIME type validation with more comprehensive magic bytes
 const FILE_SIGNATURES: Record<string, number[][]> = {
   'image/jpeg': [[0xFF, 0xD8, 0xFF]],
-  'image/png': [[0x89, 0x50, 0x4E, 0x47]],
-  'image/gif': [[0x47, 0x49, 0x46, 0x38]],
+  'image/png': [[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]],
+  'image/gif': [[0x47, 0x49, 0x46, 0x38, 0x37, 0x61], [0x47, 0x49, 0x46, 0x38, 0x39, 0x61]],
   'image/webp': [[0x52, 0x49, 0x46, 0x46]], // RIFF
-  'application/pdf': [[0x25, 0x50, 0x44, 0x46]],
-  'application/zip': [[0x50, 0x4B, 0x03, 0x04], [0x50, 0x4B, 0x05, 0x06]],
+  'application/pdf': [[0x25, 0x50, 0x44, 0x46, 0x2D]],
+  'application/zip': [[0x50, 0x4B, 0x03, 0x04], [0x50, 0x4B, 0x05, 0x06], [0x50, 0x4B, 0x07, 0x08]],
   'application/x-zip-compressed': [[0x50, 0x4B, 0x03, 0x04]],
   'text/plain': [],
   'text/csv': [],
   'application/json': [],
-  'application/msword': [[0xD0, 0xCF, 0x11, 0xE0]],
+  'application/msword': [[0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1]],
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document': [[0x50, 0x4B, 0x03, 0x04]],
-  'application/vnd.ms-excel': [[0xD0, 0xCF, 0x11, 0xE0]],
+  'application/vnd.ms-excel': [[0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1]],
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': [[0x50, 0x4B, 0x03, 0x04]],
+  'video/mp4': [[0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70], [0x00, 0x00, 0x00, 0x1C, 0x66, 0x74, 0x79, 0x70]],
+  'audio/mpeg': [[0xFF, 0xFB], [0xFF, 0xF3], [0xFF, 0xF2], [0x49, 0x44, 0x33]],
+  'audio/wav': [[0x52, 0x49, 0x46, 0x46]],
 };
 
 export const validateFileType = (buffer: Buffer, mimeType: string): boolean => {
   const signatures = FILE_SIGNATURES[mimeType];
   if (!signatures || signatures.length === 0) return true;
-  return signatures.some(sig => sig.every((byte, i) => buffer[i] === byte));
+  
+  // Check if buffer matches any of the signatures
+  const matches = signatures.some(sig => {
+    if (buffer.length < sig.length) return false;
+    return sig.every((byte, i) => buffer[i] === byte);
+  });
+  
+  // Additional validation for specific types
+  if (mimeType === 'image/webp' && matches) {
+    // Verify WEBP signature more thoroughly
+    if (buffer.length >= 12) {
+      const webpMarker = buffer.toString('ascii', 8, 12);
+      return webpMarker === 'WEBP';
+    }
+  }
+  
+  if (mimeType.startsWith('application/vnd.openxmlformats') && matches) {
+    // Office Open XML files are ZIP archives, verify they contain expected structure
+    // This is a basic check - full validation would require ZIP parsing
+    return buffer.includes(Buffer.from('word/')) || 
+           buffer.includes(Buffer.from('xl/')) || 
+           buffer.includes(Buffer.from('ppt/'));
+  }
+  
+  return matches;
 };
 
 // Storage quota check middleware
