@@ -477,14 +477,6 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 ---
 
-## 📞 Support
-
-For issues, questions, or suggestions:
-- Open an issue on GitHub
-- Email: support@securefs.example.com
-
----
-
 ## 🙏 Acknowledgments
 
 - Built with ❤️ using TypeScript and Express
@@ -500,4 +492,4 @@ This software is provided "as is" without warranty of any kind. While we impleme
 
 ---
 
-**Made with 🔐 by [Your Name]**
+**Made with 🔐 by [Muthyala Bharath Sai]**
